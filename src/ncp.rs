@@ -3,6 +3,7 @@ use crate::consts;
 use crate::ipx;
 use crate::types::*;
 use crate::error::NetWareError;
+use crate::ncp_parser;
 
 use std::fs::File;
 
@@ -44,7 +45,7 @@ const _ATTR_ARCHIVE: u8 = 0x20;
 const _ATTR_EXECUTE_CONFIRM: u8 = 0x40;
 const _ATTR_SHAREABLE: u8 = 0x80;
 
-type PathString = BoundedString<MAX_PATH_LENGTH>;
+pub type PathString = BoundedString<MAX_PATH_LENGTH>;
 
 #[derive(Debug)]
 struct FileHandle {
@@ -210,28 +211,6 @@ pub struct NcpService<'a> {
     connections: [ Connection; consts::MAX_CONNECTIONS ],
 }
 
-#[derive(Debug)]
-struct NcpRequest {
-    request_type: u16,
-    sequence_number: u8,
-    connection_number: u8,
-    task_number: u8,
-    reserved: u8,
-    function_code: u8,
-}
-
-impl NcpRequest {
-    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
-        let request_type = rdr.read_u16::<BigEndian>()?;
-        let sequence_number = rdr.read_u8()?;
-        let connection_number = rdr.read_u8()?;
-        let task_number = rdr.read_u8()?;
-        let reserved = rdr.read_u8()?;
-        let function_code = rdr.read_u8()?;
-        Ok(NcpRequest{ request_type, sequence_number, connection_number, task_number, reserved, function_code })
-    }
-}
-
 const NCP_REQUEST_LENGTH: usize = 7;
 const NCP_REPLY_LENGTH: usize = 8;
 
@@ -246,7 +225,7 @@ struct NcpReply {
 }
 
 impl NcpReply {
-    pub fn new(request: &NcpRequest, completion_code: u8) -> Self {
+    pub fn new(request: &ncp_parser::NcpRequest, completion_code: u8) -> Self {
         let reply_type = REQUEST_TYPE_REPLY;
         let sequence_number = request.sequence_number;
         let connection_number = request.connection_number;
@@ -278,7 +257,7 @@ struct NcpReplyPacket<const MAX_SIZE: usize> {
 }
 
 impl<const MAX_SIZE: usize> NcpReplyPacket<MAX_SIZE> {
-    pub fn new(request: &NcpRequest) -> Self {
+    pub fn new(request: &ncp_parser::NcpRequest) -> Self {
         let reply = NcpReply::new(request, 0);
         let payload = [ 0u8; MAX_SIZE ];
         NcpReplyPacket{ reply, payload, payload_length: 0 }
@@ -356,7 +335,7 @@ impl<'a> NcpService<'a> {
         let source = packet.get_source();
         let payload = packet.payload();
         let mut rdr = Cursor::new(payload);
-        let request = NcpRequest::from(&mut rdr)?;
+        let request = ncp_parser::NcpRequest::from(&mut rdr)?;
         match request.request_type {
             REQUEST_TYPE_CREATE_SERVICE_CONNECTION => { self.create_service_connection(&source, &request); },
             REQUEST_TYPE_DESTROY_SERVICE_CONNECTION => { self.destroy_service_connection(&source, &request); },
@@ -368,7 +347,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         return match request.function_code {
             20 => { self.process_request_20_get_fileserver_date_and_time(&request, payload) }
             22 => { self.process_request_22(&request, payload) },
@@ -388,7 +367,7 @@ impl<'a> NcpService<'a> {
         }
     }
 
-    fn process_request_22(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_22(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let conn_nr = request.connection_number - 1;
         let mut rdr = Cursor::new(payload);
         let sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
@@ -411,7 +390,7 @@ impl<'a> NcpService<'a> {
         }
     }
 
-    fn process_request_23(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_23(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let conn_nr = request.connection_number - 1;
         let mut rdr = Cursor::new(payload);
         let sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
@@ -432,7 +411,7 @@ impl<'a> NcpService<'a> {
         }
     }
 
-   fn process_request_23_17_get_fileserver_info(&mut self, request: &NcpRequest, _payload: &[u8]) -> Result<(), NetWareError> {
+   fn process_request_23_17_get_fileserver_info(&mut self, request: &ncp_parser::NcpRequest, _payload: &[u8]) -> Result<(), NetWareError> {
         let mut reply = NcpReplyPacket::<128>::new(request);
         reply.add_data(self.config.get_server_name().buffer());
         reply.add_u8(3); // FileServiceVersion
@@ -464,23 +443,23 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_23_61_read_property_value(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_23_61_read_property_value(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
         let object_type = rdr.read_u16::<BigEndian>()?;
         let object_name = MaxBoundedString::from(&mut rdr)?;
         let segment_number = rdr.read_u8()?;
         let property_name = MaxBoundedString::from(&mut rdr)?;
-        info!("{}: Read property value, object type {:x} object '{}' segment {} property '{}'", request.connection_number, object_type, object_name, segment_number, property_name);
+        trace!("{}: Read property value, object type {:x} object '{}' segment {} property '{}'", request.connection_number, object_type, object_name, segment_number, property_name);
 
         Err(NetWareError::NoSuchSet)
     }
 
-    fn process_request_33_negotiate_buffer_size(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_33_negotiate_buffer_size(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let proposed_buffer_size = rdr.read_u16::<BigEndian>()?;
-        info!("{}: Negotiate buffer size, proposed_buffer_size {}", request.connection_number, proposed_buffer_size);
+        let args = ncp_parser::NegotiateBufferSize::from(&mut rdr)?;
+        trace!("{}: Negotiate buffer size, {:?}", request.connection_number, args);
 
-        let accepted_buffer_size = if proposed_buffer_size > MAX_BUFFER_SIZE { MAX_BUFFER_SIZE } else { proposed_buffer_size };
+        let accepted_buffer_size = if args.proposed_buffer_size > MAX_BUFFER_SIZE { MAX_BUFFER_SIZE } else { args.proposed_buffer_size };
 
         let mut reply = NcpReplyPacket::<2>::new(request);
         reply.add_u16(accepted_buffer_size);
@@ -488,15 +467,14 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_62_file_search_init(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_62_file_search_init(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let handle = rdr.read_u8()?;
-        let path = PathString::from(&mut rdr)?;
-        info!("{}: File search initialize, handle {} path {}", request.connection_number, handle, path);
+        let args = ncp_parser::FileSearchInit::from(&mut rdr)?;
+        trace!("{}: File search initialize, {:?}", request.connection_number, args);
 
         let conn = self.get_connection(&request);
-        let source_dh = conn.get_dir_handle(handle)?;
-        let path = self.create_system_path(source_dh, &path)?;
+        let source_dh = conn.get_dir_handle(args.handle)?;
+        let path = self.create_system_path(source_dh, &args.path)?;
         let volume_number = source_dh.volume_number.unwrap();
         let contents = retrieve_directory_contents(Path::new(&path))?;
 
@@ -515,29 +493,25 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_63_file_search_continue(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_63_file_search_continue(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let volume_number = rdr.read_u8()?;
-        let directory_id = rdr.read_u16::<BigEndian>()?;
-        let search_sequence = rdr.read_u16::<BigEndian>()?;
-        let search_attr = rdr.read_u8()?;
-        let search_path = MaxBoundedString::from(&mut rdr)?;
-        info!("{}: File search continue, volume_number {} directory_id {} search_sequence {} search_attr {} search_path {}", request.connection_number, volume_number, directory_id, search_sequence, search_attr, search_path);
+        let args = ncp_parser::FileSearchContinue::from(&mut rdr)?;
+        trace!("{}: File search continue, {:?}", request.connection_number, args);
 
         let conn = self.get_connection(&request);
-        if let Some(sh) = conn.get_search_handle(directory_id) {
+        if let Some(sh) = conn.get_search_handle(args.directory_id) {
             if let Some(path) = &sh.path {
                 if let Some(entries) = &sh.entries {
-                    let mut index = search_sequence as usize;
+                    let mut index = args.search_sequence as usize;
                     if index == 0xffff { index = 0; }
 
-                    let want_files = (search_attr & SA_SUBDIR_ONLY) == 0;
-                    let want_dirs = (search_attr & SA_SUBDIR_ONLY) != 0;
+                    let want_files = (args.search_attr & SA_SUBDIR_ONLY) == 0;
+                    let want_dirs = (args.search_attr & SA_SUBDIR_ONLY) != 0;
                     while index < entries.len() {
                         let entry = entries[index];
                         index += 1;
 
-                        if !entry.matches(&search_path.data()) { continue; }
+                        if !entry.matches(&args.search_path.data()) { continue; }
 
                         // XXX verify match, etc.
                         let p = format!("{}/{}", path, entry);
@@ -546,7 +520,7 @@ impl<'a> NcpService<'a> {
                             if ft.is_dir() && want_dirs {
                                 let mut reply = NcpReplyPacket::<32>::new(request);
                                 reply.add_u16(index as u16); // search sequence
-                                reply.add_u16(directory_id); // directory id
+                                reply.add_u16(args.directory_id); // directory id
                                 entry.to(&mut reply); // file name
                                 let attr = ATTR_SUBDIRECTORY;
                                 reply.add_u8(attr); // directory attributes
@@ -562,7 +536,7 @@ impl<'a> NcpService<'a> {
                             if ft.is_file() && want_files {
                                 let mut reply = NcpReplyPacket::<32>::new(request);
                                 reply.add_u16(index as u16); // search sequence
-                                reply.add_u16(directory_id); // directory id
+                                reply.add_u16(args.directory_id); // directory id
                                 entry.to(&mut reply); // file name
                                 reply.add_u8(0); // file attributes
                                 reply.add_u8(0); // file mode
@@ -582,22 +556,25 @@ impl<'a> NcpService<'a> {
         Err(NetWareError::NoFilesFound)
     }
 
-    fn process_request_97_get_big_packet_ncp_max_packet_size(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_97_get_big_packet_ncp_max_packet_size(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let proposed_max_size = rdr.read_u16::<BigEndian>()?;
-        let security_flag = rdr.read_u8()?;
-        info!("{}: unsupported: Get Big Packet NCP Max Packet Size, proposed_max_size {} security_flag {:x}", request.connection_number, proposed_max_size, security_flag);
+        let args = ncp_parser::GetBigPacketNCPMaxPacketSize::from(&mut rdr)?;
+        trace!("{}: unsupported: Get Big Packet NCP Max Packet Size, {:?}", request.connection_number, args);
 
         Err(NetWareError::UnsupportedRequest)
     }
 
-    fn process_request_101_packet_burst_connection_request(&mut self, request: &NcpRequest, _payload: &[u8]) -> Result<(), NetWareError> {
-        info!("{}: unsupported: Packet burst connection request (unsupported)", request.connection_number);
+    fn process_request_101_packet_burst_connection_request(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+        let mut rdr = Cursor::new(payload);
+        let args = ncp_parser::GetBigPacketNCPMaxPacketSize::from(&mut rdr)?;
+        trace!("{}: Packet burst connection request, {:?}", request.connection_number, args);
         Err(NetWareError::UnsupportedRequest)
     }
 
-    fn process_request_20_get_fileserver_date_and_time(&mut self, request: &NcpRequest, _payload: &[u8]) -> Result<(), NetWareError> {
-        info!("{}: Get file server date and time", request.connection_number);
+    fn process_request_20_get_fileserver_date_and_time(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+        let mut rdr = Cursor::new(payload);
+        let args = ncp_parser::GetFileServerDateAndTime::from(&mut rdr)?;
+        trace!("{}: Get file server date and time, {:?}", request.connection_number, args);
         let now = Local::now();
 
         let mut reply = NcpReplyPacket::<7>::new(request);
@@ -613,15 +590,14 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_3_get_effective_directory_rights(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_22_3_get_effective_directory_rights(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let directory_handle = rdr.read_u8()?;
-        let directory_path = PathString::from(&mut rdr)?;
-        info!("{}: Get effective directory rights, handle {} path '{}'", request.connection_number, directory_handle, directory_path);
+        let args = ncp_parser::GetEffectiveDirectoryRights::from(&mut rdr)?;
+        trace!("{}: Get effective directory rights, {:?}", request.connection_number, args);
 
         let conn = self.get_connection(&request);
-        let dh = conn.get_dir_handle(directory_handle)?;
-        let path = self.create_system_path(dh, &directory_path)?;
+        let dh = conn.get_dir_handle(args.directory_handle)?;
+        let path = self.create_system_path(dh, &args.directory_path)?;
         let md = std::fs::metadata(&path)?;
         if !md.file_type().is_dir() {
             return Err(NetWareError::InvalidPath);
@@ -633,13 +609,13 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_21_get_volume_info_with_handle(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_22_21_get_volume_info_with_handle(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let directory_handle = rdr.read_u8()?;
-        info!("{}: Get volume info with handle, handle {}", request.connection_number, directory_handle);
+        let args = ncp_parser::GetVolumeInfoWithHandle::from(&mut rdr)?;
+        trace!("{}: Get volume info with handle, {:?}", request.connection_number, args);
 
         let conn = self.get_connection(&request);
-        let dh = conn.get_dir_handle(directory_handle)?;
+        let dh = conn.get_dir_handle(args.directory_handle)?;
         let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
 
         let mut reply = NcpReplyPacket::<28>::new(request);
@@ -660,16 +636,14 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_19_allocate_temp_dir_handle(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_22_19_allocate_temp_dir_handle(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let source_directory_handle = rdr.read_u8()?;
-        let handle_name = rdr.read_u8()?;
-        let directory_path = PathString::from(&mut rdr)?;
-        info!("{}: Allocate temporary directory handle, source handle {} name {} path '{}'", request.connection_number, source_directory_handle, handle_name, directory_path);
+        let args = ncp_parser::AllocateTemporaryDirectoryHandle::from(&mut rdr)?;
+        trace!("{}: Allocate temporary directory handle, {:?}", request.connection_number, args);
 
         let conn = self.get_mut_connection(&request);
-        let source_dh = conn.get_dir_handle(source_directory_handle)?;
-        let path = combine_dh_path(source_dh, &directory_path);
+        let source_dh = conn.get_dir_handle(args.source_directory_handle)?;
+        let path = combine_dh_path(source_dh, &args.directory_path);
         // XXX verify existance etc
 
         let volume_number = source_dh.volume_number.unwrap();
@@ -683,29 +657,26 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_20_deallocate_dir_handle(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_22_20_deallocate_dir_handle(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let directory_handle = rdr.read_u8()?;
-        info!("{}: Deallocate directory handle, handle {}", request.connection_number, directory_handle);
+        let args = ncp_parser::DeallocateDirectoryHandle::from(&mut rdr)?;
+        trace!("{}: Deallocate directory handle, {:?}", request.connection_number, args);
 
         let conn = self.get_mut_connection(&request);
-        let dh = conn.get_mut_dir_handle(directory_handle)?;
+        let dh = conn.get_mut_dir_handle(args.directory_handle)?;
         *dh = DirectoryHandle::zero();
         self.send_completion_code_reply(request, 0);
         Ok(())
     }
 
-    fn process_request_76_open_file(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_76_open_file(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let directory_handle = rdr.read_u8()?;
-        let search_attr = rdr.read_u8()?;
-        let desired_access = rdr.read_u8()?;
-        let filename = PathString::from(&mut rdr)?;
-        info!("{}: Open file, handle {} search_attr {} desired_access {} filename '{}'", request.connection_number, directory_handle, search_attr, desired_access, filename);
+        let args = ncp_parser::OpenFile::from(&mut rdr)?;
+        trace!("{}: Open file, {:?}", request.connection_number, args);
 
         let conn = self.get_connection(&request);
-        let dh = conn.get_dir_handle(directory_handle)?;
-        let path = self.create_system_path(dh, &filename)?;
+        let dh = conn.get_dir_handle(args.directory_handle)?;
+        let path = self.create_system_path(dh, &args.filename)?;
 
         if let Some(filename) = extract_filename_from(&path) {
             if let Ok(f) = File::open(&path) {
@@ -735,47 +706,41 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_72_read_from_file(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_72_read_from_file(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let _reserved = rdr.read_u8()?;
-        let _file_handle_hi = rdr.read_u32::<BigEndian>()?;
-        let file_handle = rdr.read_u16::<BigEndian>()?;
-        let offset = rdr.read_u32::<BigEndian>()?;
-        let length = rdr.read_u16::<BigEndian>()?;
-        info!("{}: Read from file, handle {} offset {} length {}", request.connection_number, file_handle, offset, length);
+        let args = ncp_parser::ReadFromFile::from(&mut rdr)?;
+        trace!("{}: Read from file, {:?}", request.connection_number, args);
 
         let conn = self.get_mut_connection(&request);
-        let fh = conn.get_mut_file_handle(file_handle as u8)?;
+        let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
         let mut file = fh.file.as_ref().unwrap();
-        file.seek(SeekFrom::Start(offset as u64))?;
+        file.seek(SeekFrom::Start(args.offset as u64))?;
 
-        let mut data = vec![ 0u8; length.into() ];
+        let mut data = vec![ 0u8; args.length.into() ];
         let count = file.read(&mut data)?;
         let mut reply = NcpReplyPacket::<{2 + 65536}>::new(request);
         reply.add_u16(count as u16);
         // Reads from unaligned offsets must insert a dummy byte
-        let odd = offset & 1;
+        let odd = args.offset & 1;
         if odd != 0 { reply.add_u8(0); }
         reply.add_data(&data[0..count]);
         reply.send(&self);
         Ok(())
     }
 
-    fn process_request_66_close_file(&mut self, request: &NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
+    fn process_request_66_close_file(&mut self, request: &ncp_parser::NcpRequest, payload: &[u8]) -> Result<(), NetWareError> {
         let mut rdr = Cursor::new(payload);
-        let _reserved = rdr.read_u8()?;
-        let _file_handle_hi = rdr.read_u32::<BigEndian>()?;
-        let file_handle = rdr.read_u16::<BigEndian>()?;
-        info!("{}: Close file, handle {}", request.connection_number, file_handle);
+        let args = ncp_parser::CloseFile::from(&mut rdr)?;
+        trace!("{}: Close file, {:?}", request.connection_number, args);
 
         let conn = self.get_mut_connection(&request);
-        let fh = conn.get_mut_file_handle(file_handle as u8)?;
+        let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
         *fh = FileHandle::zero();
         self.send_completion_code_reply(request, 0);
         Ok(())
     }
 
-    fn get_connection_index(&self, dest: &IpxAddr, request: &NcpRequest) -> Option<usize> {
+    fn get_connection_index(&self, dest: &IpxAddr, request: &ncp_parser::NcpRequest) -> Option<usize> {
         let connection_number = request.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;
@@ -787,7 +752,7 @@ impl<'a> NcpService<'a> {
         None
     }
 
-    fn get_connection(&self, request: &NcpRequest) -> &Connection {
+    fn get_connection(&self, request: &ncp_parser::NcpRequest) -> &Connection {
         let connection_number = request.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;
@@ -796,7 +761,7 @@ impl<'a> NcpService<'a> {
         unreachable!()
     }
 
-    fn get_mut_connection(&mut self, request: &NcpRequest) -> &mut Connection {
+    fn get_mut_connection(&mut self, request: &ncp_parser::NcpRequest) -> &mut Connection {
         let connection_number = request.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;
@@ -805,7 +770,7 @@ impl<'a> NcpService<'a> {
         unreachable!()
     }
 
-    fn handle_request(&mut self, dest: &IpxAddr, request: &NcpRequest, payload: &[u8]) {
+    fn handle_request(&mut self, dest: &IpxAddr, request: &ncp_parser::NcpRequest, payload: &[u8]) {
         if self.get_connection_index(dest, request).is_none() {
             // 'dest' does not own this connection - reject
             let e = NetWareError::ConnectionNotLoggedIn;
@@ -830,7 +795,7 @@ impl<'a> NcpService<'a> {
         None
     }
 
-    fn create_service_connection(&mut self, dest: &IpxAddr, request: &NcpRequest) {
+    fn create_service_connection(&mut self, dest: &IpxAddr, request: &ncp_parser::NcpRequest) {
         trace!("create_service_connection(): dest {}", dest);
         if request.sequence_number != 0 || request.connection_number != 0xff {
             error!("rejecting to create connection for {}, invalid sequence/connection number", dest);
@@ -846,7 +811,7 @@ impl<'a> NcpService<'a> {
         self.send_reply(dest, &reply, &[]);
     }
 
-    fn destroy_service_connection(&mut self, dest: &IpxAddr, request: &NcpRequest) {
+    fn destroy_service_connection(&mut self, dest: &IpxAddr, request: &ncp_parser::NcpRequest) {
         trace!("{}: destroy_service_connection(): dest {}", request.connection_number, dest);
         let mut reply = NcpReply::new(&request, 0);
         if let Some(index) = self.get_connection_index(dest, request) {
@@ -858,7 +823,7 @@ impl<'a> NcpService<'a> {
         self.send_reply(dest, &reply, &[]);
     }
 
-    fn send_completion_code_reply(&mut self, request: &NcpRequest, code: u8) {
+    fn send_completion_code_reply(&mut self, request: &ncp_parser::NcpRequest, code: u8) {
         let mut reply = NcpReplyPacket::<0>::new(request);
         reply.set_completion_code(code);
         reply.send(&self);
