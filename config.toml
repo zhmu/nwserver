@@ -4,3 +4,8 @@ server_name = "BUCKET"
 ipx_network = 0x1234
 internal_ipx_network = 0xdeadf00d
 interface = "br0"
+
+[volumes]
+    [volumes.sys]
+    path = "/nfs/rink/nwserver/sys"
+

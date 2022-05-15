@@ -47,7 +47,7 @@ impl<'a> SapService<'a> {
 
     pub fn build_sap_response(&self, buffer: &mut [u8]) {
         BigEndian::write_u16(&mut buffer[0..], SAP_SERVICE_TYPE_FILESERVER);
-        buffer[2..2 + consts::SERVER_NAME_LENGTH].copy_from_slice(self.config.get_server_name());
+        buffer[2..2 + consts::SERVER_NAME_LENGTH].copy_from_slice(self.config.get_server_name().buffer());
         let mut addr = self.config.get_server_address();
         addr.set_socket(consts::IPX_SOCKET_NCP);
         addr.to(&mut buffer[50..]);

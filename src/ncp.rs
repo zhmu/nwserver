@@ -14,7 +14,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 use pnet::packet::Packet;
 
-const VOLUME_SYS: u8 = 1;
+const VOLUME_LOGIN: u8 = 0;
 
 const MAX_BUFFER_SIZE: u16 = 1024;
 
@@ -29,7 +29,6 @@ const _CONNECTION_STATUS_SERVER_DOWN: u8 = 0x10;
 const ERR_INVALID_PATH: u8 = 0x9c;
 
 const MAX_PATH_LENGTH: usize = 64;
-const MAX_VOLUME_NAME_LENGTH : usize = 16;
 const MAX_OPEN_FILES: usize = 16;
 
 const _SA_HIDDEN: u8 = 0x02;
@@ -46,18 +45,6 @@ const _ATTR_EXECUTE_CONFIRM: u8 = 0x40;
 const _ATTR_SHAREABLE: u8 = 0x80;
 
 type PathString = BoundedString<MAX_PATH_LENGTH>;
-
-struct Volume {
-    name: BoundedString<MAX_VOLUME_NAME_LENGTH>,
-    root: String,
-}
-
-impl Volume {
-    pub const fn zero() -> Self {
-        let name = BoundedString::empty();
-        Self{ name, root: String::new() }
-    }
-}
 
 #[derive(Debug)]
 struct FileHandle {
@@ -76,18 +63,18 @@ impl FileHandle {
 
 #[derive(Debug,Clone,Copy)]
 struct DirectoryHandle {
-    volume_number: u8,
+    volume_number: Option<u8>,
     path: PathString,
 }
 
 impl DirectoryHandle {
     const fn zero() -> Self {
         let path = PathString::empty();
-        Self{ volume_number: 0, path }
+        Self{ volume_number: None, path }
     }
 
     fn is_available(&self) -> bool {
-        self.volume_number == 0
+        self.volume_number.is_none()
     }
 }
 
@@ -132,7 +119,7 @@ impl Connection {
     pub fn allocate(dest: &IpxAddr) -> Self {
         let mut c = Connection::zero();
         c.dest = *dest;
-        let dh = c.alloc_dir_handle(VOLUME_SYS);
+        let dh = c.alloc_dir_handle(VOLUME_LOGIN);
         let dh = dh.unwrap();
         assert!(dh.0 == 1); // must be first directory handle
         c
@@ -147,7 +134,7 @@ impl Connection {
             if !dh.is_available() { continue; }
 
             *dh = DirectoryHandle::zero();
-            dh.volume_number = volume_number;
+            dh.volume_number = Some(volume_number);
             return Ok(((n + 1) as u8, dh))
         }
         Err(NetWareError::NoDirectoryHandlesLeft)
@@ -155,20 +142,24 @@ impl Connection {
 
     pub fn get_dir_handle(&self, index: u8) -> Result<&DirectoryHandle, NetWareError> {
         let index = index as usize;
-        return if index >= 1 && index < self.dir_handle.len() {
-            Ok(&self.dir_handle[index - 1])
-        } else {
-            Err(NetWareError::BadDirectoryHandle)
+        if index >= 1 && index < self.dir_handle.len() {
+            let dh = &self.dir_handle[index - 1];
+            if dh.volume_number.is_some() {
+                return Ok(dh)
+            }
         }
+        Err(NetWareError::BadDirectoryHandle)
     }
 
     pub fn get_mut_dir_handle(&mut self, index: u8) -> Result<&mut DirectoryHandle, NetWareError> {
         let index = index as usize;
-        return if index >= 1 && index < self.dir_handle.len() {
-            Ok(&mut self.dir_handle[index - 1])
-        } else {
-            Err(NetWareError::BadDirectoryHandle)
+        if index >= 1 && index < self.dir_handle.len() {
+            let dh = &mut self.dir_handle[index - 1];
+            if dh.volume_number.is_some() {
+                return Ok(dh)
+            }
         }
+        Err(NetWareError::BadDirectoryHandle)
     }
 
     fn allocate_search_handle(&mut self, path: String, contents: Vec<DosFileName>) -> &mut SearchHandle {
@@ -217,7 +208,6 @@ pub struct NcpService<'a> {
     config: &'a config::Configuration,
     tx: &'a ipx::Transmitter,
     connections: [ Connection; consts::MAX_CONNECTIONS ],
-    volumes: [ Volume; consts::MAX_VOLUMES ],
 }
 
 #[derive(Debug)]
@@ -346,12 +336,7 @@ impl<'a> NcpService<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
         const CONN_INIT: Connection = Connection::zero();
         let connections = [ CONN_INIT; consts::MAX_CONNECTIONS ];
-        const VOL_INIT: Volume = Volume::zero();
-        let mut volumes = [ VOL_INIT; consts::MAX_VOLUMES ];
-        let sys_vol = &mut volumes[(VOLUME_SYS - 1) as usize];
-        sys_vol.name = BoundedString::from_str("SYS");
-        sys_vol.root = config.get_sys_volume_path();
-        NcpService{ config, tx, connections, volumes }
+        NcpService{ config, tx, connections }
     }
 
     fn send_reply(&self, dest: &IpxAddr, reply: &NcpReply, payload: &[u8]) {
@@ -449,7 +434,7 @@ impl<'a> NcpService<'a> {
 
    fn process_request_23_17_get_fileserver_info(&mut self, request: &NcpRequest, _payload: &[u8]) -> Result<(), NetWareError> {
         let mut reply = NcpReplyPacket::<128>::new(request);
-        reply.add_data(self.config.get_server_name());
+        reply.add_data(self.config.get_server_name().buffer());
         reply.add_u8(3); // FileServiceVersion
         reply.add_u8(12); // FileServiceSubVersion
         reply.add_u16(consts::MAX_CONNECTIONS as u16); // MaximumServiceConnections
@@ -511,8 +496,8 @@ impl<'a> NcpService<'a> {
 
         let conn = self.get_connection(&request);
         let source_dh = conn.get_dir_handle(handle)?;
-        let path = self.create_system_path(source_dh, &path);
-        let volume_number = source_dh.volume_number; // XXX assumes this can't traverse volumes
+        let path = self.create_system_path(source_dh, &path)?;
+        let volume_number = source_dh.volume_number.unwrap(); // XXX assumes this can't traverse volumes
         let contents = retrieve_directory_contents(Path::new(&path))?;
 
         // XXX verify existance, access etc
@@ -636,7 +621,7 @@ impl<'a> NcpService<'a> {
 
         let conn = self.get_connection(&request);
         let dh = conn.get_dir_handle(directory_handle)?;
-        let path = self.create_system_path(dh, &directory_path);
+        let path = self.create_system_path(dh, &directory_path)?;
         let md = std::fs::metadata(&path)?;
         if !md.file_type().is_dir() {
             return Err(NetWareError::InvalidPath);
@@ -655,7 +640,7 @@ impl<'a> NcpService<'a> {
 
         let conn = self.get_connection(&request);
         let dh = conn.get_dir_handle(directory_handle)?;
-        let volume = &self.volumes[(dh.volume_number - 1) as usize];
+        let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
 
         let mut reply = NcpReplyPacket::<28>::new(request);
         let sectors_per_cluster = 128; // 64k
@@ -687,7 +672,7 @@ impl<'a> NcpService<'a> {
         let path = combine_dh_path(source_dh, &directory_path);
         // XXX verify existance etc
 
-        let volume_number = source_dh.volume_number;
+        let volume_number = source_dh.volume_number.unwrap();
         let (new_dh_index, new_dh) = conn.alloc_dir_handle(volume_number)?;
         new_dh.path = path;
         let mut reply = NcpReplyPacket::<2>::new(request);
@@ -720,7 +705,7 @@ impl<'a> NcpService<'a> {
 
         let conn = self.get_connection(&request);
         let dh = conn.get_dir_handle(directory_handle)?;
-        let path = self.create_system_path(dh, &filename);
+        let path = self.create_system_path(dh, &filename)?;
 
         if let Some(filename) = extract_filename_from(&path) {
             if let Ok(f) = File::open(&path) {
@@ -879,14 +864,25 @@ impl<'a> NcpService<'a> {
         reply.send(&self);
     }
 
-    fn create_system_path(&self, dh: &DirectoryHandle, sub_path: &PathString) -> String {
+    fn create_system_path(&self, dh: &DirectoryHandle, sub_path: &PathString) -> Result<String, NetWareError> {
         let path = combine_dh_path(dh, sub_path);
-        let volume = &self.volumes[(dh.volume_number - 1) as usize];
+        let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
         if !path.is_empty() {
-            let path = format!("{}/{}", volume.root, path);
-            return str::replace(&path, "\\", "/")
+            let path = format!("{}/{}", volume.path, path);
+            return Ok(str::replace(&path, "\\", "/"))
         }
-        volume.root.as_str().to_string()
+        Ok(volume.path.as_str().to_string())
+    }
+
+    fn get_volume_by_number(&self, volume: u8) -> Result<&config::Volume, NetWareError> {
+        let index = volume as usize;
+        let volumes = self.config.get_volumes();
+        println!("get_volume_by_number {} {}", index, volumes.len());
+        return if index < volumes.len() {
+            Ok(&volumes[index])
+        } else {
+            Err(NetWareError::NoSuchVolume)
+        }
     }
 }
 

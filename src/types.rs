@@ -107,6 +107,10 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
         Self{ data, length: 0 }
     }
 
+    pub fn buffer(&self) -> &[u8] {
+        &self.data
+    }
+
     pub fn data(&self) -> &[u8] {
         &self.data[0..self.length]
     }
