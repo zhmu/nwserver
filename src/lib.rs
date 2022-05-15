@@ -5,3 +5,4 @@ pub mod config;
 pub mod ipx;
 pub mod ncp;
 pub mod rip;
+pub mod error;

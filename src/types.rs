@@ -1,3 +1,4 @@
+use crate::error::NetWareError;
 use pnet::util::MacAddr;
 use std::fmt;
 
@@ -126,12 +127,12 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
         s
     }
 
-    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Option<Self> {
-        let length: usize = rdr.read_u8().ok()?.into();
-        if length >= MAX_SIZE { return None }
+    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let length: usize = rdr.read_u8()?.into();
+        if length >= MAX_SIZE { return Err(NetWareError::StringTooLong) }
         let mut data = [ 0u8; MAX_SIZE ];
-        rdr.read(&mut data[0..length]).ok()?;
-        Some(Self{ data, length })
+        rdr.read(&mut data[0..length])?;
+        Ok(Self{ data, length })
     }
 
     pub fn to<T: DataStreamer>(&self, out: &mut T) -> Option<()> {
