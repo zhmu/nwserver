@@ -1,0 +1,6 @@
+server_name = "BUCKET"
+
+[network]
+ipx_network = 0x1234
+internal_ipx_network = 0xdeadf00d
+interface = "br0"
