@@ -31,6 +31,12 @@ impl NcpRequest {
 pub struct GetFileServerInfo {
 }
 
+impl GetFileServerInfo {
+    pub fn from<T: Read + ReadBytesExt>(_rdr: &mut T) -> Result<Self, NetWareError> {
+        Ok(Self{})
+    }
+}
+
 #[derive(Debug)]
 pub struct ReadPropertyValue {
     object_type: u16,
@@ -234,5 +240,79 @@ impl CloseFile {
         let _file_handle_hi = rdr.read_u32::<BigEndian>()?;
         let file_handle = rdr.read_u16::<BigEndian>()?;
         Ok(Self{ _reserved, _file_handle_hi, file_handle })
+    }
+}
+
+pub enum Request {
+    UnrecognizedRequest(u8, u8),
+    GetFileServerInfo(GetFileServerInfo),
+    ReadPropertyValue(ReadPropertyValue),
+    NegotiateBufferSize(NegotiateBufferSize),
+    FileSearchInit(FileSearchInit),
+    FileSearchContinue(FileSearchContinue),
+    GetBigPacketNCPMaxPacketSize(GetBigPacketNCPMaxPacketSize),
+    PacketBurstConnectionRequest(PacketBurstConnectionRequest),
+    GetFileServerDateAndTime(GetFileServerDateAndTime),
+    GetEffectiveDirectoryRights(GetEffectiveDirectoryRights),
+    GetVolumeInfoWithHandle(GetVolumeInfoWithHandle),
+    AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle),
+    DeallocateDirectoryHandle(DeallocateDirectoryHandle),
+    OpenFile(OpenFile),
+    ReadFromFile(ReadFromFile),
+    CloseFile(CloseFile),
+}
+
+impl Request {
+    pub fn from<T: Read + ReadBytesExt>(request: &NcpRequest, rdr: &mut T) -> Result<Self, NetWareError> {
+        return match request.function_code {
+            20 => { Ok(Request::GetFileServerDateAndTime(GetFileServerDateAndTime::from(rdr)?)) },
+            22 => { Request::from_22(rdr) },
+            23 => { Request::from_23(rdr) },
+            33 => { Ok(Request::NegotiateBufferSize(NegotiateBufferSize::from(rdr)?)) },
+            62 => { Ok(Request::FileSearchInit(FileSearchInit::from(rdr)?)) },
+            63 => { Ok(Request::FileSearchContinue(FileSearchContinue::from(rdr)?)) },
+            66 => { Ok(Request::CloseFile(CloseFile::from(rdr)?)) },
+            72 => { Ok(Request::ReadFromFile(ReadFromFile::from(rdr)?)) },
+            76 => { Ok(Request::OpenFile(OpenFile::from(rdr)?)) },
+            97 => { Ok(Request::GetBigPacketNCPMaxPacketSize(GetBigPacketNCPMaxPacketSize::from(rdr)?)) },
+            101 => { Ok(Request::PacketBurstConnectionRequest(PacketBurstConnectionRequest::from(rdr)?)) },
+            _ => {
+                Ok(Request::UnrecognizedRequest(request.function_code, 0))
+            },
+        }
+    }
+
+    fn from_22<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
+        let sub_func = rdr.read_u8()?;
+/*
+        if payload.len() != 2 + (sub_func_struc_len as usize) {
+            return Err(NetWareError::RequestLengthMismatch);
+        }
+*/
+        return match sub_func {
+            3 => { Ok(Request::GetEffectiveDirectoryRights(GetEffectiveDirectoryRights::from(rdr)?)) },
+            19 => { Ok(Request::AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle::from(rdr)?)) },
+            20 => { Ok(Request::DeallocateDirectoryHandle(DeallocateDirectoryHandle::from(rdr)?)) },
+            21 => { Ok(Request::GetVolumeInfoWithHandle(GetVolumeInfoWithHandle::from(rdr)?)) },
+            _ => { Ok(Request::UnrecognizedRequest(22, sub_func)) },
+        }
+    }
+
+    fn from_23<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
+        let sub_func = rdr.read_u8()?;
+/*
+        if payload.len() != 2 + (sub_func_struc_len as usize) {
+            warn!("{}: request 23 struct length mismatch (got {}, but payload length is {}), dropping",
+                conn_nr, sub_func_struc_len, payload.len());
+            return Err(NetWareError::RequestLengthMismatch);
+        }
+*/
+        return match sub_func {
+            17 => { Ok(Request::GetFileServerInfo(GetFileServerInfo::from(rdr)?)) },
+            61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },
+            _ => { Ok(Request::UnrecognizedRequest(23, sub_func)) },
+        }
     }
 }
