@@ -1,0 +1,17 @@
+[package]
+name = "nwserver"
+version = "0.1.0"
+authors = ["Rink Springer <rink@rink.nu>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+byteorder = "1"
+# 0.29.0 does not build
+pnet = "0.28.0"
+pnet_macros = "*"
+pnet_macros_support = "*"
+log = "0.4"
+pretty_env_logger = "0.4.0"
+chrono = "0.4"
