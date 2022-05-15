@@ -131,11 +131,4 @@ impl Configuration {
     pub fn get_volumes(&self) -> &Vec<Volume> {
         &self.volumes
     }
-
-    //pub fn get_sys_volume(&self) -> &Volume {
-    //}
-
-    pub fn get_sys_volume_path(&self) -> String {
-        "/nfs/rink/nwserver/sys".to_string()
-    }
 }

@@ -497,7 +497,7 @@ impl<'a> NcpService<'a> {
         let conn = self.get_connection(&request);
         let source_dh = conn.get_dir_handle(handle)?;
         let path = self.create_system_path(source_dh, &path)?;
-        let volume_number = source_dh.volume_number.unwrap(); // XXX assumes this can't traverse volumes
+        let volume_number = source_dh.volume_number.unwrap();
         let contents = retrieve_directory_contents(Path::new(&path))?;
 
         // XXX verify existance, access etc
@@ -877,7 +877,6 @@ impl<'a> NcpService<'a> {
     fn get_volume_by_number(&self, volume: u8) -> Result<&config::Volume, NetWareError> {
         let index = volume as usize;
         let volumes = self.config.get_volumes();
-        println!("get_volume_by_number {} {}", index, volumes.len());
         return if index < volumes.len() {
             Ok(&volumes[index])
         } else {
@@ -887,14 +886,26 @@ impl<'a> NcpService<'a> {
 }
 
 fn retrieve_directory_contents(path: &Path) -> Result<Vec<DosFileName>, std::io::Error> {
-    let entries = std::fs::read_dir(path)?;
     let mut results: Vec<DosFileName> = Vec::new();
-    for entry in entries {
-        if let Ok(item) = entry {
-            let f = item.file_name();
-            if let Some(file_name) = f.to_str() {
+
+    let md = std::fs::metadata(path)?;
+    if md.is_dir() {
+        let entries = std::fs::read_dir(path)?;
+        for entry in entries {
+            if let Ok(item) = entry {
+                let f = item.file_name();
+                if let Some(file_name) = f.to_str() {
+                    if let Some(file_name) = DosFileName::from_str(file_name) {
+                        results.push(file_name.clone());
+                    }
+                }
+            }
+        }
+    } else if md.is_file() {
+        if let Some(file_name) = path.file_name() {
+            if let Some(file_name) = file_name.to_str() {
                 if let Some(file_name) = DosFileName::from_str(file_name) {
-                    results.push(file_name.clone());
+                    results.push(file_name);
                 }
             }
         }
