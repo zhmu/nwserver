@@ -7,3 +7,5 @@ pub mod ncp;
 pub mod rip;
 pub mod error;
 pub mod ncp_parser;
+pub mod connection;
+pub mod handle;

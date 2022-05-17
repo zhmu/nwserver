@@ -7,3 +7,8 @@ pub const MAX_VOLUMES: usize = 64;
 pub const VOLUME_NAME_LENGTH : usize = 16;
 
 pub const SERVER_NAME_LENGTH: usize = 48;
+
+// Limits per connection
+pub const MAX_SEARCH_HANDLES: usize = 16;
+pub const MAX_DIR_HANDLES: usize = 32;
+pub const MAX_OPEN_FILES: usize = 16;

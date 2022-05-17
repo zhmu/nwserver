@@ -4,6 +4,8 @@ use crate::ipx;
 use crate::types::*;
 use crate::error::NetWareError;
 use crate::ncp_parser;
+use crate::connection;
+use crate::handle;
 
 use std::fs::File;
 
@@ -14,8 +16,6 @@ use byteorder::{ByteOrder, BigEndian};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 use pnet::packet::Packet;
-
-const VOLUME_LOGIN: u8 = 0;
 
 const MAX_BUFFER_SIZE: u16 = 1024;
 
@@ -30,7 +30,6 @@ const _CONNECTION_STATUS_SERVER_DOWN: u8 = 0x10;
 const ERR_INVALID_PATH: u8 = 0x9c;
 
 const MAX_PATH_LENGTH: usize = 64;
-const MAX_OPEN_FILES: usize = 16;
 
 const _SA_HIDDEN: u8 = 0x02;
 const _SA_SYSTEM: u8 = 0x04;
@@ -47,168 +46,10 @@ const _ATTR_SHAREABLE: u8 = 0x80;
 
 pub type PathString = BoundedString<MAX_PATH_LENGTH>;
 
-#[derive(Debug)]
-struct FileHandle {
-    file: Option<std::fs::File>,
-}
-
-impl FileHandle {
-    const fn zero() -> Self {
-        Self{ file: None }
-    }
-
-    pub fn is_available(&self) -> bool {
-        self.file.is_none()
-    }
-}
-
-#[derive(Debug,Clone,Copy)]
-struct DirectoryHandle {
-    volume_number: Option<u8>,
-    path: PathString,
-}
-
-impl DirectoryHandle {
-    const fn zero() -> Self {
-        let path = PathString::empty();
-        Self{ volume_number: None, path }
-    }
-
-    fn is_available(&self) -> bool {
-        self.volume_number.is_none()
-    }
-}
-
-#[derive(Debug)]
-struct SearchHandle {
-    id: u16,
-    path: Option<String>,
-    entries: Option<Vec<DosFileName>>,
-}
-
-impl SearchHandle {
-    const fn zero() -> Self {
-        Self{ id: 0, path: None, entries: None }
-    }
-}
-
-const MAX_SEARCH_HANDLES: usize = 16;
-const MAX_DIR_HANDLES: usize = 32;
-
-#[derive(Debug)]
-struct Connection {
-    dest: IpxAddr,
-    sequence_number: u8,
-    dir_handle: [ DirectoryHandle; MAX_DIR_HANDLES ],
-    search_handle: [ SearchHandle; MAX_SEARCH_HANDLES ],
-    next_search_handle: usize,
-    file_handle: [ FileHandle; MAX_OPEN_FILES ],
-}
-
-impl Connection {
-    const fn zero() -> Self {
-        const INIT_DIR_HANDLE: DirectoryHandle = DirectoryHandle::zero();
-        let dir_handle = [ INIT_DIR_HANDLE; MAX_DIR_HANDLES ];
-        const INIT_SEARCH_HANDLE: SearchHandle = SearchHandle::zero();
-        let search_handle = [ INIT_SEARCH_HANDLE ; MAX_SEARCH_HANDLES ];
-        let next_search_handle = 0;
-        const INIT_FILE_HANDLE: FileHandle = FileHandle::zero();
-        let file_handle = [ INIT_FILE_HANDLE; MAX_OPEN_FILES ];
-        Connection{ dest: IpxAddr::zero(), sequence_number: 0, dir_handle, search_handle, next_search_handle, file_handle }
-    }
-
-    pub fn allocate(dest: &IpxAddr) -> Self {
-        let mut c = Connection::zero();
-        c.dest = *dest;
-        let dh = c.alloc_dir_handle(VOLUME_LOGIN);
-        let dh = dh.unwrap();
-        assert!(dh.0 == 1); // must be first directory handle
-        c
-    }
-
-    pub fn in_use(&self) -> bool {
-        !self.dest.is_zero()
-    }
-
-    pub fn alloc_dir_handle(&mut self, volume_number: u8) -> Result<(u8, &mut DirectoryHandle), NetWareError> {
-        for (n, dh) in self.dir_handle.iter_mut().enumerate() {
-            if !dh.is_available() { continue; }
-
-            *dh = DirectoryHandle::zero();
-            dh.volume_number = Some(volume_number);
-            return Ok(((n + 1) as u8, dh))
-        }
-        Err(NetWareError::NoDirectoryHandlesLeft)
-    }
-
-    pub fn get_dir_handle(&self, index: u8) -> Result<&DirectoryHandle, NetWareError> {
-        let index = index as usize;
-        if index >= 1 && index < self.dir_handle.len() {
-            let dh = &self.dir_handle[index - 1];
-            if dh.volume_number.is_some() {
-                return Ok(dh)
-            }
-        }
-        Err(NetWareError::BadDirectoryHandle)
-    }
-
-    pub fn get_mut_dir_handle(&mut self, index: u8) -> Result<&mut DirectoryHandle, NetWareError> {
-        let index = index as usize;
-        if index >= 1 && index < self.dir_handle.len() {
-            let dh = &mut self.dir_handle[index - 1];
-            if dh.volume_number.is_some() {
-                return Ok(dh)
-            }
-        }
-        Err(NetWareError::BadDirectoryHandle)
-    }
-
-    fn allocate_search_handle(&mut self, path: String, contents: Vec<DosFileName>) -> &mut SearchHandle {
-        let index = self.next_search_handle % self.search_handle.len();
-        self.next_search_handle += 1;
-
-        let sh = &mut self.search_handle[index];
-        *sh = SearchHandle::zero();
-        sh.id = self.next_search_handle as u16; // XXX is this safe?
-        sh.path = Some(path);
-        sh.entries = Some(contents);
-        sh
-    }
-
-    pub fn get_search_handle(&self, id: u16) -> Option<&SearchHandle> {
-        for sh in &self.search_handle {
-            if sh.entries.is_some() && sh.id == id {
-                return Some(sh)
-            }
-        }
-        None
-    }
-
-    fn allocate_file_handle(&mut self, file: std::fs::File) -> Result<(u8, &mut FileHandle), NetWareError> {
-        for (n, fh) in self.file_handle.iter_mut().enumerate() {
-            if !fh.is_available() { continue; }
-
-            *fh = FileHandle::zero();
-            fh.file = Some(file);
-            return Ok(((n + 1) as u8, fh))
-        }
-        Err(NetWareError::OutOfHandles)
-    }
-
-    pub fn get_mut_file_handle(&mut self, index: u8) -> Result<&mut FileHandle, NetWareError> {
-        let index = index as usize;
-        return if index >= 1 && index < self.file_handle.len() {
-            Ok(&mut self.file_handle[index - 1])
-        } else {
-            Err(NetWareError::InvalidFileHandle)
-        }
-    }
-}
-
 pub struct NcpService<'a> {
     config: &'a config::Configuration,
     tx: &'a ipx::Transmitter,
-    connections: [ Connection; consts::MAX_CONNECTIONS ],
+    connections: [ connection::Connection; consts::MAX_CONNECTIONS ],
 }
 
 const NCP_REQUEST_LENGTH: usize = 7;
@@ -313,7 +154,7 @@ impl<const MAX_SIZE: usize> DataStreamer for NcpReplyPacket<MAX_SIZE> {
 
 impl<'a> NcpService<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
-        const CONN_INIT: Connection = Connection::zero();
+        const CONN_INIT: connection::Connection = connection::Connection::zero();
         let connections = [ CONN_INIT; consts::MAX_CONNECTIONS ];
         NcpService{ config, tx, connections }
     }
@@ -629,7 +470,7 @@ impl<'a> NcpService<'a> {
 
         let conn = self.get_mut_connection(&request);
         let dh = conn.get_mut_dir_handle(args.directory_handle)?;
-        *dh = DirectoryHandle::zero();
+        *dh = handle::DirectoryHandle::zero();
         self.send_completion_code_reply(request, 0);
         Ok(())
     }
@@ -694,7 +535,7 @@ impl<'a> NcpService<'a> {
 
         let conn = self.get_mut_connection(&request);
         let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
-        *fh = FileHandle::zero();
+        *fh = handle::FileHandle::zero();
         self.send_completion_code_reply(request, 0);
         Ok(())
     }
@@ -711,7 +552,7 @@ impl<'a> NcpService<'a> {
         None
     }
 
-    fn get_connection(&self, request: &ncp_parser::NcpRequest) -> &Connection {
+    fn get_connection(&self, request: &ncp_parser::NcpRequest) -> &connection::Connection {
         let connection_number = request.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;
@@ -720,7 +561,7 @@ impl<'a> NcpService<'a> {
         unreachable!()
     }
 
-    fn get_mut_connection(&mut self, request: &ncp_parser::NcpRequest) -> &mut Connection {
+    fn get_mut_connection(&mut self, request: &ncp_parser::NcpRequest) -> &mut connection::Connection {
         let connection_number = request.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;
@@ -748,7 +589,7 @@ impl<'a> NcpService<'a> {
         for (n, conn) in self.connections.iter_mut().enumerate() {
             if conn.in_use() { continue; }
 
-            *conn = Connection::allocate(dest);
+            *conn = connection::Connection::allocate(dest);
             return Some(n);
         }
         None
@@ -775,7 +616,7 @@ impl<'a> NcpService<'a> {
         let mut reply = NcpReply::new(&request, 0);
         if let Some(index) = self.get_connection_index(dest, request) {
             let conn = &mut self.connections[index];
-            *conn = Connection::zero();
+            *conn = connection::Connection::zero();
         } else {
             reply.connection_status = 0xff;
         }
@@ -788,7 +629,7 @@ impl<'a> NcpService<'a> {
         reply.send(&self);
     }
 
-    fn create_system_path(&self, dh: &DirectoryHandle, sub_path: &PathString) -> Result<String, NetWareError> {
+    fn create_system_path(&self, dh: &handle::DirectoryHandle, sub_path: &PathString) -> Result<String, NetWareError> {
         let path = combine_dh_path(dh, sub_path);
         let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
         if !path.is_empty() {
@@ -837,7 +678,7 @@ fn retrieve_directory_contents(path: &Path) -> Result<Vec<DosFileName>, std::io:
     Ok(results)
 }
 
-fn combine_dh_path(dh: &DirectoryHandle, sub_path: &PathString) -> PathString {
+fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &PathString) -> PathString {
     let mut path = dh.path.clone();
     if !sub_path.is_empty() {
         path.append_str("/");
