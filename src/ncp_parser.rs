@@ -6,7 +6,7 @@ use std::io::Read;
 use byteorder::{BigEndian, ReadBytesExt};
 
 #[derive(Debug)]
-pub struct NcpRequest {
+pub struct NcpHeader {
     pub request_type: u16,
     pub sequence_number: u8,
     pub connection_number: u8,
@@ -15,7 +15,7 @@ pub struct NcpRequest {
     pub function_code: u8,
 }
 
-impl NcpRequest {
+impl NcpHeader {
     pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
         let request_type = rdr.read_u16::<BigEndian>()?;
         let sequence_number = rdr.read_u8()?;
@@ -23,7 +23,7 @@ impl NcpRequest {
         let task_number = rdr.read_u8()?;
         let reserved = rdr.read_u8()?;
         let function_code = rdr.read_u8()?;
-        Ok(NcpRequest{ request_type, sequence_number, connection_number, task_number, reserved, function_code })
+        Ok(Self{ request_type, sequence_number, connection_number, task_number, reserved, function_code })
     }
 }
 
@@ -263,8 +263,8 @@ pub enum Request {
 }
 
 impl Request {
-    pub fn from<T: Read + ReadBytesExt>(request: &NcpRequest, rdr: &mut T) -> Result<Self, NetWareError> {
-        return match request.function_code {
+    pub fn from<T: Read + ReadBytesExt>(header: &NcpHeader, rdr: &mut T) -> Result<Self, NetWareError> {
+        return match header.function_code {
             20 => { Ok(Request::GetFileServerDateAndTime(GetFileServerDateAndTime::from(rdr)?)) },
             22 => { Request::from_22(rdr) },
             23 => { Request::from_23(rdr) },
@@ -277,7 +277,7 @@ impl Request {
             97 => { Ok(Request::GetBigPacketNCPMaxPacketSize(GetBigPacketNCPMaxPacketSize::from(rdr)?)) },
             101 => { Ok(Request::PacketBurstConnectionRequest(PacketBurstConnectionRequest::from(rdr)?)) },
             _ => {
-                Ok(Request::UnrecognizedRequest(request.function_code, 0))
+                Ok(Request::UnrecognizedRequest(header.function_code, 0))
             },
         }
     }
