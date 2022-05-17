@@ -9,3 +9,4 @@ pub mod error;
 pub mod ncp_parser;
 pub mod connection;
 pub mod handle;
+pub mod clients;

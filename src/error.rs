@@ -14,6 +14,7 @@ pub enum NetWareError {
     StringTooLong,
     RequestLengthMismatch,
     NoSuchVolume,
+    NoConnectionsAvailable,
 }
 
 impl NetWareError {
@@ -30,7 +31,8 @@ impl NetWareError {
             NetWareError::NoSuchSet => 0xec,
             NetWareError::NoFilesFound => 0xff,
             NetWareError::UnsupportedRequest | NetWareError::StringTooLong |
-            NetWareError::RequestLengthMismatch | NetWareError::NoSuchVolume => { 0xff },
+            NetWareError::RequestLengthMismatch | NetWareError::NoSuchVolume |
+            NetWareError::NoConnectionsAvailable => { 0xff },
         }
     }
 }
