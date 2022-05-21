@@ -113,7 +113,7 @@ impl<const MAX_SIZE: usize> NcpReplyPacket<MAX_SIZE> {
             println!("warning: NcpReplyPacket payload length is only {} out of max {}", self.payload_length, MAX_SIZE);
         }
 */
-        let conn = s.clients.get_connection_by_number(self.reply.connection_number);
+        let conn = s.clients.get_connection_by_number(self.reply.connection_number).unwrap();
         s.send_reply(&conn.dest, &self.reply, &self.payload[0..self.payload_length]);
     }
 }
@@ -245,7 +245,7 @@ impl<'a> NcpService<'a> {
     fn process_request_62_file_search_init(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchInit) -> Result<(), NetWareError> {
         trace!("{}: File search initialize, {:?}", header.connection_number, args);
 
-        let conn = self.clients.get_connection(&header);
+        let conn = self.clients.get_connection(&header)?;
         let source_dh = conn.get_dir_handle(args.handle)?;
         let path = self.create_system_path(source_dh, &args.path)?;
         let volume_number = source_dh.volume_number.unwrap();
@@ -269,7 +269,7 @@ impl<'a> NcpService<'a> {
     fn process_request_63_file_search_continue(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchContinue) -> Result<(), NetWareError> {
         trace!("{}: File search continue, {:?}", header.connection_number, args);
 
-        let conn = self.clients.get_connection(&header);
+        let conn = self.clients.get_connection(&header)?;
         if let Some(sh) = conn.get_search_handle(args.directory_id) {
             if let Some(path) = &sh.path {
                 if let Some(entries) = &sh.entries {
@@ -357,7 +357,7 @@ impl<'a> NcpService<'a> {
     fn process_request_22_3_get_effective_directory_rights(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetEffectiveDirectoryRights) -> Result<(), NetWareError> {
         trace!("{}: Get effective directory rights, {:?}", header.connection_number, args);
 
-        let conn = self.clients.get_connection(&header);
+        let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
         let path = self.create_system_path(dh, &args.directory_path)?;
         let md = std::fs::metadata(&path)?;
@@ -374,7 +374,7 @@ impl<'a> NcpService<'a> {
     fn process_request_22_21_get_volume_info_with_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetVolumeInfoWithHandle) -> Result<(), NetWareError> {
         trace!("{}: Get volume info with handle, {:?}", header.connection_number, args);
 
-        let conn = self.clients.get_connection(&header);
+        let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
         let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
 
@@ -428,7 +428,7 @@ impl<'a> NcpService<'a> {
     fn process_request_76_open_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::OpenFile) -> Result<(), NetWareError> {
         trace!("{}: Open file, {:?}", header.connection_number, args);
 
-        let conn = self.clients.get_connection(&header);
+        let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
         let path = self.create_system_path(dh, &args.filename)?;
 
@@ -487,7 +487,7 @@ impl<'a> NcpService<'a> {
     }
 
     fn process_request<T: Read + ReadBytesExt>(&mut self, dest: &IpxAddr, header: &ncp_parser::NcpHeader, rdr: &mut T) -> Result<(), NetWareError> {
-        self.clients.get_connection_index(dest, header)?;
+        let conn = self.clients.get_connection(&header)?;
 
         let req = ncp_parser::Request::from(header, rdr)?;
         return match req {
