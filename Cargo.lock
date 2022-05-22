@@ -144,12 +144,22 @@ dependencies = [
  "byteorder",
  "chrono",
  "log",
+ "nwserver_macros",
  "pnet",
  "pnet_macros",
  "pnet_macros_support",
  "pretty_env_logger",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "nwserver_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
