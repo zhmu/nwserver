@@ -18,6 +18,8 @@ struct Field {
 }
 
 struct NcpPacket {
+    name: String,
+    descr: String,
     fields: Vec<Field>
 }
 
@@ -47,8 +49,9 @@ fn generate_read_for_type(ty: &Type, rdr: &str) -> String {
     }
 }
 
-fn parse_packet(s: &syn::DataStruct) -> Result<NcpPacket, Error> {
+fn parse_packet(s: &syn::DataStruct, name: &str) -> Result<NcpPacket, Error> {
     let mut fields: Vec<Field> = Vec::new();
+    let mut descr: String = format!("{}", name);
     for field in &s.fields {
         let name = match &field.ident {
             Some(name) => name.to_string(),
@@ -60,9 +63,28 @@ fn parse_packet(s: &syn::DataStruct) -> Result<NcpPacket, Error> {
                 return Err(Error::new(field.ty.span(), format!("unsupported type {}", type_to_string(&field.ty))))
             }
         };
+        for attr in &field.attrs {
+            let node = attr.parse_meta()?;
+            match node {
+                syn::Meta::NameValue(ref name_value) => {
+                    if let Some(ident) = name_value.path.get_ident() {
+                        if ident == "descr" {
+                            if let syn::Lit::Str(ref s) = name_value.lit {
+                                descr = s.value();
+                            } else {
+                                return Err(Error::new(name_value.path.span(), "#[descr] takes a string as argument"));
+                            }
+                        }
+                    }
+                },
+                _ => {
+                    return Err(Error::new(node.span(), "unsupported meta attribute"))
+                }
+            }
+        }
         fields.push(Field{ name, typ })
     }
-    Ok(NcpPacket{ fields })
+    Ok(NcpPacket{ name: name.to_string(), descr, fields })
 }
 
 fn generate_read_fields(ncp_packet: &NcpPacket) -> Result<String, Error> {
@@ -85,12 +107,9 @@ fn generate_field_names(ncp_packet: &NcpPacket) -> Result<String, Error> {
     Ok(s)
 }
 
-fn generate_ncp_packet(s: &syn::DataStruct, name: String) -> Result<proc_macro2::TokenStream, Error> {
-    let ncp_packet = parse_packet(s)?;
-
+fn generate_from_impl(ncp_packet: &NcpPacket) -> Result<proc_macro2::TokenStream, Error> {
     let read_fields = generate_read_fields(&ncp_packet)?;
     let field_names = generate_field_names(&ncp_packet)?;
-
     let impls = format!("
         impl {name} {{
             pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {{
@@ -98,13 +117,49 @@ fn generate_ncp_packet(s: &syn::DataStruct, name: String) -> Result<proc_macro2:
                 Ok(Self{{ {field_names} }})
             }}
         }}
-    ", name=name, read_fields=read_fields, field_names=field_names);
-    let stmt: syn::Stmt = syn::parse_str(&impls).expect("generate_ncp_packet failed");
-    let ts = quote! { #stmt };
+    ", name=ncp_packet.name, read_fields=read_fields, field_names=field_names);
+    let stmt: syn::Stmt = syn::parse_str(&impls).expect("generate_from_impl failed");
+    Ok(quote! { #stmt })
+}
+
+fn generate_print_impl(ncp_packet: &NcpPacket) -> Result<proc_macro2::TokenStream, Error> {
+    let mut fmt_str = String::new();
+    let mut fmt_fields = String::new();
+    for f in &ncp_packet.fields {
+        fmt_str += format!("{}: {{}} ", f.name).as_str();
+        fmt_fields += format!(", self.{}", f.name).as_str();
+    }
+
+    let display_impl = format!("
+        impl fmt::Display for {name} {{
+            fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {{
+                write!(fmt, \"{descr} {{{{ {fmt_str} }}}}\" {fmt_fields})
+            }}
+        }}
+    ", name=ncp_packet.name, fmt_str=fmt_str, fmt_fields=fmt_fields, descr=ncp_packet.descr);
+    let display: syn::Stmt = syn::parse_str(&display_impl).expect("generate_print_impl failed");
+
+    let debug_impl = format!("
+        impl fmt::Debug for {name} {{
+            fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {{
+                fmt::Display::fmt(self, fmt)
+            }}
+        }}
+    ", name=ncp_packet.name);
+    let debug: syn::Stmt = syn::parse_str(&debug_impl).expect("generate_print_impl failed");
+    Ok(quote! { #display #debug })
+}
+
+fn generate_ncp_packet(s: &syn::DataStruct, name: String) -> Result<proc_macro2::TokenStream, Error> {
+    let ncp_packet = parse_packet(s, &name)?;
+
+    let from_impl = generate_from_impl(&ncp_packet)?;
+    let print_impl = generate_print_impl(&ncp_packet)?;
+    let ts = quote! { #from_impl #print_impl };
     Ok(ts)
 }
 
-#[proc_macro_derive(NcpPacket)]
+#[proc_macro_derive(NcpPacket,attributes(descr))]
 pub fn derive_packet(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let name = &ast.ident;
