@@ -49,59 +49,37 @@ pub struct NcpService<'a> {
 
 const NCP_REPLY_LENGTH: usize = 8;
 
-struct NcpReply {
-    reply_type: u16,
-    sequence_number: u8,
-    connection_number: u8,
-    task_number: u8,
-    reserved: u8,
-    completion_code: u8,
-    connection_status: u8
-}
-
-impl NcpReply {
-    pub fn new(header: &ncp_parser::NcpHeader, completion_code: u8) -> Self {
-        let reply_type = REQUEST_TYPE_REPLY;
-        let sequence_number = header.sequence_number;
-        let connection_number = header.connection_number;
-        let task_number = header.task_number;
-        let reserved = 0;
-        let connection_status = 0;
-        NcpReply{ reply_type, sequence_number, connection_number, task_number, reserved, completion_code, connection_status }
-    }
-
-    pub fn to(&self, buffer: &mut [u8]) {
-        BigEndian::write_u16(&mut buffer[0..], self.reply_type);
-        buffer[2] = self.sequence_number;
-        buffer[3] = self.connection_number;
-        buffer[4] = self.task_number;
-        buffer[5] = self.reserved;
-        buffer[6] = self.completion_code;
-        buffer[7] = self.connection_status;
-    }
-
-    pub fn set_completion_code(&mut self, code: u8) {
-        self.completion_code = code;
-    }
-}
-
 struct NcpReplyPacket<const MAX_SIZE: usize> {
-    reply: NcpReply,
     payload: [ u8; MAX_SIZE ],
     payload_length: usize,
 }
 
-type NcpMaxReplyPacket = NcpReplyPacket< { (MAX_BUFFER_SIZE + 2 + 7) as usize } >;
+type NcpMaxReplyPacket = NcpReplyPacket< { (MAX_BUFFER_SIZE as usize) + NCP_REPLY_LENGTH + 3 } >;
 
 impl<const MAX_SIZE: usize> NcpReplyPacket<MAX_SIZE> {
     pub fn new(header: &ncp_parser::NcpHeader) -> Self {
-        let reply = NcpReply::new(header, 0);
         let payload = [ 0u8; MAX_SIZE ];
-        NcpReplyPacket{ reply, payload, payload_length: 0 }
+        let mut result = NcpReplyPacket{ payload, payload_length: 0 };
+        result.add_u16(REQUEST_TYPE_REPLY);
+        result.add_u8(header.sequence_number);
+        result.add_u8(header.connection_number);
+        result.add_u8(header.task_number);
+        result.add_u8(0); // reserved
+        result.add_u8(0); // completion code
+        result.add_u8(0); // connection status
+        result
+    }
+
+    pub fn set_connection_number(&mut self, conn: u8) {
+        self.payload[3] = conn;
     }
 
     pub fn set_completion_code(&mut self, code: u8) {
-        self.reply.set_completion_code(code);
+        self.payload[6] = code;
+    }
+
+    pub fn set_connection_status(&mut self, status: u8) {
+        self.payload[7] = status;
     }
 }
 
@@ -144,17 +122,11 @@ impl<'a> NcpService<'a> {
         NcpService{ config, tx, clients }
     }
 
-    fn send_reply(&self, dest: &IpxAddr, reply: &NcpReply, payload: &[u8]) {
-        let mut buffer = [ 0u8; 4096 /* XXX */ ];
-        reply.to(&mut buffer[0..NCP_REPLY_LENGTH]);
-
-        let payload_length = payload.len();
-        buffer[NCP_REPLY_LENGTH..NCP_REPLY_LENGTH + payload_length].copy_from_slice(&payload);
-
+    fn send_reply(&self, dest: &IpxAddr, data: &[u8]) {
         let server_addr = self.config.get_server_address();
         let mut src = server_addr.clone();
         src.set_socket(consts::IPX_SOCKET_NCP);
-        self.tx.send(&src, dest, &buffer[0..NCP_REPLY_LENGTH + payload_length]);
+        self.tx.send(&src, dest, &data)
     }
 
     pub fn process_packet(&mut self, packet: &ipx::IpxPacket) -> Result<(), NetWareError> {
@@ -186,7 +158,7 @@ impl<'a> NcpService<'a> {
         reply.add_u8(0); // RestrictionLevel
         reply.add_u8(0); // InternetBridge
         reply.add_u8(0); // MixedModePathFlag
-        reply.add_u8(0); // TODO LocalLoginInfoCcode
+        reply.add_u8(0); // LocalLoginInfoCcode
         reply.add_u16(0); // ProductMajorVersion
         reply.add_u16(0); // ProductMinorVersion
         reply.add_u16(0); // ProductRevisionVersion
@@ -412,14 +384,13 @@ impl<'a> NcpService<'a> {
 
     fn send(&mut self, dest: &IpxAddr, result: Result<(), NetWareError>, reply: &mut NcpMaxReplyPacket) {
         match result {
-            Ok(_) => {
-                self.send_reply(dest, &reply.reply, &reply.payload[0..reply.payload_length]);
-            },
+            Ok(_) => { },
             Err(err) => {
+                assert_eq!(reply.payload_length, NCP_REPLY_LENGTH);
                 reply.set_completion_code(err.to_error_code());
-                self.send_reply(dest, &reply.reply, &[]);
             }
         }
+        self.send_reply(dest, &reply.payload[0..reply.payload_length]);
     }
 
     fn process_request<T: Read + ReadBytesExt>(&mut self, dest: &IpxAddr, header: &ncp_parser::NcpHeader, rdr: &mut T) {
@@ -429,6 +400,7 @@ impl<'a> NcpService<'a> {
         let mut reply = NcpMaxReplyPacket::new(header);
 
         if let ncp_parser::Request::CreateServiceConnection(args) = req {
+            trace!("create_service_connection(): dest {}", dest);
             let result = self.create_service_connection(header, dest, &args, &mut reply);
             self.send(dest, result, &mut reply);
             return;
@@ -437,7 +409,7 @@ impl<'a> NcpService<'a> {
         //let _conn = self.clients.get_connection(&header)?;
         trace!("{}: {}", header.connection_number, req);
         let result = match req {
-            ncp_parser::Request::UnrecognizedRequest(a, b,c ) => {
+            ncp_parser::Request::UnrecognizedRequest(a, b, c) => {
                 warn!("{}: unrecognized request type {} code {} subrequest {}", header.connection_number - 1, a, b, c);
                 Err(NetWareError::UnsupportedRequest)
             }
@@ -497,17 +469,16 @@ impl<'a> NcpService<'a> {
     }
 
     fn create_service_connection(&mut self, header: &ncp_parser::NcpHeader, dest: &IpxAddr, _args: &ncp_parser::CreateServiceConnection, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
-        trace!("create_service_connection(): dest {}", dest);
         if header.sequence_number != 0 || header.connection_number != 0xff {
             error!("rejecting to create connection for {}, invalid sequence/connection number", dest);
-            reply.reply.completion_code = 0xff;
+            reply.set_completion_code(0xff);
             return Ok(())
         }
         if let Ok(conn) = self.clients.allocate_connection(dest) {
-            reply.reply.connection_number = (conn + 1) as u8;
+            reply.set_connection_number((conn + 1) as u8);
         } else {
-            reply.reply.completion_code = 0xff;
-            reply.reply.connection_status = CONNECTION_STATUS_NO_CONNECTIONS_AVAILABLE;
+            reply.set_completion_code(0xff);
+            reply.set_connection_status(CONNECTION_STATUS_NO_CONNECTIONS_AVAILABLE);
         }
         Ok(())
     }
