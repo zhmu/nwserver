@@ -47,18 +47,17 @@ pub struct NcpService<'a> {
     clients: clients::Clients,
 }
 
-const NCP_REPLY_LENGTH: usize = 8;
+const NCP_REPLY_HEADER_LENGTH: usize = 8;
+const NCP_REPLY_MAX_LENGTH: usize = (MAX_BUFFER_SIZE as usize) + NCP_REPLY_HEADER_LENGTH + 3;
 
-struct NcpReplyPacket<const MAX_SIZE: usize> {
-    payload: [ u8; MAX_SIZE ],
+struct NcpReplyPacket {
+    payload: [ u8; NCP_REPLY_MAX_LENGTH ],
     payload_length: usize,
 }
 
-type NcpMaxReplyPacket = NcpReplyPacket< { (MAX_BUFFER_SIZE as usize) + NCP_REPLY_LENGTH + 3 } >;
-
-impl<const MAX_SIZE: usize> NcpReplyPacket<MAX_SIZE> {
+impl NcpReplyPacket {
     pub fn new(header: &ncp_parser::NcpHeader) -> Self {
-        let payload = [ 0u8; MAX_SIZE ];
+        let payload = [ 0u8; NCP_REPLY_MAX_LENGTH ];
         let mut result = NcpReplyPacket{ payload, payload_length: 0 };
         result.add_u16(REQUEST_TYPE_REPLY);
         result.add_u8(header.sequence_number);
@@ -83,28 +82,28 @@ impl<const MAX_SIZE: usize> NcpReplyPacket<MAX_SIZE> {
     }
 }
 
-impl<const MAX_SIZE: usize> DataStreamer for NcpReplyPacket<MAX_SIZE> {
+impl DataStreamer for NcpReplyPacket {
     fn add_data(&mut self, value: &[u8]) {
         let end = self.payload_length + value.len();
-        assert!(end <= MAX_SIZE);
+        assert!(end <= NCP_REPLY_MAX_LENGTH);
         self.payload[self.payload_length..end].copy_from_slice(value);
         self.payload_length = end;
     }
 
     fn add_u8(&mut self, value: u8) {
-        assert!(self.payload_length + 1 <= MAX_SIZE);
+        assert!(self.payload_length + 1 <= NCP_REPLY_MAX_LENGTH);
         self.payload[self.payload_length] = value;
         self.payload_length += 1;
     }
 
     fn add_u16(&mut self, value: u16) {
-        assert!(self.payload_length + 2 <= MAX_SIZE);
+        assert!(self.payload_length + 2 <= NCP_REPLY_MAX_LENGTH);
         BigEndian::write_u16(&mut self.payload[self.payload_length..], value);
         self.payload_length += 2;
     }
 
     fn add_u32(&mut self, value: u32) {
-        assert!(self.payload_length + 4 <= MAX_SIZE);
+        assert!(self.payload_length + 4 <= NCP_REPLY_MAX_LENGTH);
         BigEndian::write_u32(&mut self.payload[self.payload_length..], value);
         self.payload_length += 4;
     }
@@ -138,7 +137,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_23_17_get_fileserver_info(&mut self, header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerInfo, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_23_17_get_fileserver_info(&mut self, header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerInfo, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         reply.add_data(self.config.get_server_name().buffer());
         reply.add_u8(3); // FileServiceVersion
         reply.add_u8(12); // FileServiceSubVersion
@@ -168,18 +167,18 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_23_61_read_property_value(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::ReadPropertyValue, _reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_23_61_read_property_value(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::ReadPropertyValue, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         Err(NetWareError::NoSuchSet)
     }
 
-    fn process_request_33_negotiate_buffer_size(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::NegotiateBufferSize, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_33_negotiate_buffer_size(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::NegotiateBufferSize, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let accepted_buffer_size = if args.proposed_buffer_size > MAX_BUFFER_SIZE { MAX_BUFFER_SIZE } else { args.proposed_buffer_size };
 
         reply.add_u16(accepted_buffer_size);
         Ok(())
     }
 
-    fn process_request_62_file_search_init(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchInit, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_62_file_search_init(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         let source_dh = conn.get_dir_handle(args.handle)?;
         let path = self.create_system_path(source_dh, &args.path)?;
@@ -199,7 +198,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_63_file_search_continue(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchContinue, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_63_file_search_continue(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchContinue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         if let Some(sh) = conn.get_search_handle(args.directory_id) {
             if let Some(path) = &sh.path {
@@ -254,15 +253,15 @@ impl<'a> NcpService<'a> {
         Err(NetWareError::NoFilesFound)
     }
 
-    fn process_request_97_get_big_packet_ncp_max_packet_size(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetBigPacketNCPMaxPacketSize, _reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_97_get_big_packet_ncp_max_packet_size(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetBigPacketNCPMaxPacketSize, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         Err(NetWareError::UnsupportedRequest)
     }
 
-    fn process_request_101_packet_burst_connection_request(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::PacketBurstConnectionRequest, _reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_101_packet_burst_connection_request(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::PacketBurstConnectionRequest, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         Err(NetWareError::UnsupportedRequest)
     }
 
-    fn process_request_20_get_fileserver_date_and_time(&mut self, header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerDateAndTime, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_20_get_fileserver_date_and_time(&mut self, header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerDateAndTime, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let now = Local::now();
 
         reply.add_u8((now.year() - 1900) as u8); // Year
@@ -276,7 +275,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_3_get_effective_directory_rights(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetEffectiveDirectoryRights, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_22_3_get_effective_directory_rights(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
         let path = self.create_system_path(dh, &args.directory_path)?;
@@ -289,7 +288,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_21_get_volume_info_with_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetVolumeInfoWithHandle, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_22_21_get_volume_info_with_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
         let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
@@ -310,7 +309,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_19_allocate_temp_dir_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_22_19_allocate_temp_dir_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_mut_connection(&header);
         let source_dh = conn.get_dir_handle(args.source_directory_handle)?;
         let path = combine_dh_path(source_dh, &args.directory_path);
@@ -325,14 +324,14 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_20_deallocate_dir_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::DeallocateDirectoryHandle, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_22_20_deallocate_dir_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::DeallocateDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_mut_connection(&header);
         let dh = conn.get_mut_dir_handle(args.directory_handle)?;
         *dh = handle::DirectoryHandle::zero();
         Ok(())
     }
 
-    fn process_request_76_open_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::OpenFile, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_76_open_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
         let path = self.create_system_path(dh, &args.filename)?;
@@ -359,7 +358,7 @@ impl<'a> NcpService<'a> {
         }
     }
 
-    fn process_request_72_read_from_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::ReadFromFile, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_72_read_from_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::ReadFromFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_mut_connection(&header);
         let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
         let mut file = fh.file.as_ref().unwrap();
@@ -375,18 +374,18 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_66_close_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::CloseFile, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_66_close_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::CloseFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_mut_connection(&header);
         let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
         *fh = handle::FileHandle::zero();
         Ok(())
     }
 
-    fn send(&mut self, dest: &IpxAddr, result: Result<(), NetWareError>, reply: &mut NcpMaxReplyPacket) {
+    fn send(&mut self, dest: &IpxAddr, result: Result<(), NetWareError>, reply: &mut NcpReplyPacket) {
         match result {
             Ok(_) => { },
             Err(err) => {
-                assert_eq!(reply.payload_length, NCP_REPLY_LENGTH);
+                assert_eq!(reply.payload_length, NCP_REPLY_HEADER_LENGTH);
                 reply.set_completion_code(err.to_error_code());
             }
         }
@@ -397,7 +396,7 @@ impl<'a> NcpService<'a> {
         let req = ncp_parser::Request::from(header, rdr);
         if req.is_err() { return }
         let req = req.unwrap();
-        let mut reply = NcpMaxReplyPacket::new(header);
+        let mut reply = NcpReplyPacket::new(header);
 
         if let ncp_parser::Request::CreateServiceConnection(args) = req {
             trace!("create_service_connection(): dest {}", dest);
@@ -468,7 +467,7 @@ impl<'a> NcpService<'a> {
         self.send(dest, result, &mut reply);
     }
 
-    fn create_service_connection(&mut self, header: &ncp_parser::NcpHeader, dest: &IpxAddr, _args: &ncp_parser::CreateServiceConnection, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn create_service_connection(&mut self, header: &ncp_parser::NcpHeader, dest: &IpxAddr, _args: &ncp_parser::CreateServiceConnection, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         if header.sequence_number != 0 || header.connection_number != 0xff {
             error!("rejecting to create connection for {}, invalid sequence/connection number", dest);
             reply.set_completion_code(0xff);
@@ -483,7 +482,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn destroy_service_connection(&mut self, header: &ncp_parser::NcpHeader, dest: &IpxAddr, _args: &ncp_parser::DestroyServiceConnection, reply: &mut NcpMaxReplyPacket) -> Result<(), NetWareError> {
+    fn destroy_service_connection(&mut self, header: &ncp_parser::NcpHeader, dest: &IpxAddr, _args: &ncp_parser::DestroyServiceConnection, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         trace!("{}: destroy_service_connection(): dest {}", header.connection_number, dest);
         if let Err(_) = self.clients.disconnect(dest, header) {
             reply.set_completion_code(0xff);
