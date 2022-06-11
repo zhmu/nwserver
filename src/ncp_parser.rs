@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::error::*;
-use crate::ncp::PathString;
 
 use std::fmt;
 use std::io::Read;
@@ -59,7 +58,7 @@ pub struct NegotiateBufferSize {
 pub struct FileSearchInit {
     #[descr="File search initialize"]
     pub handle: u8,
-    pub path: PathString,
+    pub path: MaxBoundedString,
 }
 
 #[derive(NcpPacket)]
@@ -94,7 +93,7 @@ pub struct GetFileServerDateAndTime {
 pub struct GetEffectiveDirectoryRights {
     #[descr="Get effective directory rights"]
     pub directory_handle: u8,
-    pub directory_path: PathString,
+    pub directory_path: MaxBoundedString,
 }
 
 #[derive(NcpPacket)]
@@ -108,7 +107,7 @@ pub struct AllocateTemporaryDirectoryHandle {
     #[descr="Allocate temporary directory handle"]
     pub source_directory_handle: u8,
     pub handle_name: u8,
-    pub directory_path: PathString,
+    pub directory_path: MaxBoundedString,
 }
 
 #[derive(NcpPacket)]
@@ -123,7 +122,7 @@ pub struct OpenFile {
     pub directory_handle: u8,
     pub search_attr: u8,
     pub desired_access: u8,
-    pub filename: PathString,
+    pub filename: MaxBoundedString,
 }
 
 #[derive(NcpPacket)]

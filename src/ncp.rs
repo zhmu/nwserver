@@ -40,8 +40,6 @@ const _ATTR_ARCHIVE: u8 = 0x20;
 const _ATTR_EXECUTE_CONFIRM: u8 = 0x40;
 const _ATTR_SHAREABLE: u8 = 0x80;
 
-pub type PathString = BoundedString<MAX_PATH_LENGTH>;
-
 pub struct NcpService<'a> {
     config: &'a config::Configuration,
     tx: &'a ipx::Transmitter,
@@ -277,7 +275,7 @@ fn retrieve_directory_contents(path: &Path) -> Result<Vec<DosFileName>, std::io:
     Ok(results)
 }
 
-fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &PathString) -> PathString {
+fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> MaxBoundedString {
     let mut path = dh.path.clone();
     if !sub_path.is_empty() {
         path.append_str("/");
@@ -296,7 +294,7 @@ fn extract_filename_from(path: &str) -> Result<DosFileName, NetWareError> {
     DosFileName::from_str(p).ok_or(NetWareError::InvalidPath)
 }
 
-fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &PathString) -> Result<String, NetWareError> {
+fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> Result<String, NetWareError> {
     let path = combine_dh_path(dh, sub_path);
     let volume = dh.volume.unwrap();
     if !path.is_empty() {

@@ -1,4 +1,3 @@
-use crate::ncp::PathString; // TODO move this to types
 use crate::types::*;
 use crate::config;
 
@@ -19,12 +18,12 @@ impl FileHandle {
 
 pub struct DirectoryHandle<'a> {
     pub volume: Option<&'a config::Volume>,
-    pub path: PathString,
+    pub path: MaxBoundedString,
 }
 
 impl<'a> DirectoryHandle<'a> {
     pub const fn zero() -> Self {
-        let path = PathString::empty();
+        let path = MaxBoundedString::empty();
         Self{ volume: None, path }
     }
 
