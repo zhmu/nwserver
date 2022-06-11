@@ -2,20 +2,19 @@ use crate::consts;
 use crate::types::*;
 use crate::handle;
 use crate::error::NetWareError;
+use crate::config;
 
-const VOLUME_LOGIN: u8 = 0;
+const VOLUME_LOGIN: usize = 0;
 
-#[derive(Debug)]
-pub struct Connection {
+pub struct Connection<'a> {
     pub dest: IpxAddr,
-    sequence_number: u8,
-    dir_handle: [ handle::DirectoryHandle; consts::MAX_DIR_HANDLES ],
+    dir_handle: [ handle::DirectoryHandle<'a>; consts::MAX_DIR_HANDLES ],
     search_handle: [ handle::SearchHandle; consts::MAX_SEARCH_HANDLES ],
     next_search_handle: usize,
     file_handle: [ handle::FileHandle; consts::MAX_OPEN_FILES ],
 }
 
-impl Connection {
+impl<'a> Connection<'a> {
     pub const fn zero() -> Self {
         const INIT_DIR_HANDLE: handle::DirectoryHandle = handle::DirectoryHandle::zero();
         let dir_handle = [ INIT_DIR_HANDLE; consts::MAX_DIR_HANDLES ];
@@ -24,13 +23,13 @@ impl Connection {
         let next_search_handle = 0;
         const INIT_FILE_HANDLE: handle::FileHandle = handle::FileHandle::zero();
         let file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
-        Connection{ dest: IpxAddr::zero(), sequence_number: 0, dir_handle, search_handle, next_search_handle, file_handle }
+        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle }
     }
 
-    pub fn allocate(dest: &IpxAddr) -> Self {
+    pub fn allocate(config: &'a config::Configuration, dest: &IpxAddr) -> Self {
         let mut c = Connection::zero();
         c.dest = *dest;
-        let dh = c.alloc_dir_handle(VOLUME_LOGIN);
+        let dh = c.alloc_dir_handle(config, VOLUME_LOGIN);
         let dh = dh.unwrap();
         assert!(dh.0 == 1); // must be first directory handle
         c
@@ -40,12 +39,13 @@ impl Connection {
         !self.dest.is_zero()
     }
 
-    pub fn alloc_dir_handle(&mut self, volume_number: u8) -> Result<(u8, &mut handle::DirectoryHandle), NetWareError> {
+    pub fn alloc_dir_handle(&mut self, config: &'a config::Configuration, volume_index: usize) -> Result<(u8, &mut handle::DirectoryHandle<'a>), NetWareError> {
         for (n, dh) in self.dir_handle.iter_mut().enumerate() {
             if !dh.is_available() { continue; }
 
             *dh = handle::DirectoryHandle::zero();
-            dh.volume_number = Some(volume_number);
+            let volume = &config.get_volumes()[volume_index];
+            dh.volume = Some(volume);
             return Ok(((n + 1) as u8, dh))
         }
         Err(NetWareError::NoDirectoryHandlesLeft)
@@ -55,18 +55,18 @@ impl Connection {
         let index = index as usize;
         if index >= 1 && index < self.dir_handle.len() {
             let dh = &self.dir_handle[index - 1];
-            if dh.volume_number.is_some() {
+            if dh.volume.is_some() {
                 return Ok(dh)
             }
         }
         Err(NetWareError::BadDirectoryHandle)
     }
 
-    pub fn get_mut_dir_handle(&mut self, index: u8) -> Result<&mut handle::DirectoryHandle, NetWareError> {
+    pub fn get_mut_dir_handle(&mut self, index: u8) -> Result<&mut handle::DirectoryHandle<'a>, NetWareError> {
         let index = index as usize;
         if index >= 1 && index < self.dir_handle.len() {
             let dh = &mut self.dir_handle[index - 1];
-            if dh.volume_number.is_some() {
+            if dh.volume.is_some() {
                 return Ok(dh)
             }
         }

@@ -44,7 +44,7 @@ pub type PathString = BoundedString<MAX_PATH_LENGTH>;
 pub struct NcpService<'a> {
     config: &'a config::Configuration,
     tx: &'a ipx::Transmitter,
-    clients: clients::Clients,
+    clients: clients::Clients<'a>,
 }
 
 const NCP_REPLY_HEADER_LENGTH: usize = 8;
@@ -137,7 +137,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_23_17_get_fileserver_info(&mut self, header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerInfo, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_23_17_get_fileserver_info(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerInfo, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         reply.add_data(self.config.get_server_name().buffer());
         reply.add_u8(3); // FileServiceVersion
         reply.add_u8(12); // FileServiceSubVersion
@@ -171,30 +171,10 @@ impl<'a> NcpService<'a> {
         Err(NetWareError::NoSuchSet)
     }
 
-    fn process_request_33_negotiate_buffer_size(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::NegotiateBufferSize, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_33_negotiate_buffer_size(&mut self, _header: &ncp_parser::NcpHeader, args: &ncp_parser::NegotiateBufferSize, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let accepted_buffer_size = if args.proposed_buffer_size > MAX_BUFFER_SIZE { MAX_BUFFER_SIZE } else { args.proposed_buffer_size };
 
         reply.add_u16(accepted_buffer_size);
-        Ok(())
-    }
-
-    fn process_request_62_file_search_init(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_connection(&header)?;
-        let source_dh = conn.get_dir_handle(args.handle)?;
-        let path = self.create_system_path(source_dh, &args.path)?;
-        let volume_number = source_dh.volume_number.unwrap();
-        let contents = retrieve_directory_contents(Path::new(&path))?;
-
-        // XXX verify existance, access etc
-        let conn = self.clients.get_mut_connection(&header);
-        let sh = conn.allocate_search_handle(path, contents);
-        reply.add_u8(volume_number);
-        let directory_id = sh.id;
-        reply.add_u16(directory_id);
-        let search_sequence_number = 0xffff;
-        reply.add_u16(search_sequence_number);
-        let dir_access_rights = 0xff;
-        reply.add_u8(dir_access_rights);
         Ok(())
     }
 
@@ -261,7 +241,7 @@ impl<'a> NcpService<'a> {
         Err(NetWareError::UnsupportedRequest)
     }
 
-    fn process_request_20_get_fileserver_date_and_time(&mut self, header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerDateAndTime, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    fn process_request_20_get_fileserver_date_and_time(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerDateAndTime, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let now = Local::now();
 
         reply.add_u8((now.year() - 1900) as u8); // Year
@@ -278,7 +258,7 @@ impl<'a> NcpService<'a> {
     fn process_request_22_3_get_effective_directory_rights(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
-        let path = self.create_system_path(dh, &args.directory_path)?;
+        let path = create_system_path(dh, &args.directory_path)?;
         let md = std::fs::metadata(&path)?;
         if !md.file_type().is_dir() {
             return Err(NetWareError::InvalidPath);
@@ -291,7 +271,7 @@ impl<'a> NcpService<'a> {
     fn process_request_22_21_get_volume_info_with_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
         let conn = self.clients.get_connection(&header)?;
         let dh = conn.get_dir_handle(args.directory_handle)?;
-        let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
+        let volume = dh.volume.unwrap();
 
         let sectors_per_cluster = 128; // 64k
         reply.add_u16(sectors_per_cluster);
@@ -309,79 +289,7 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_22_19_allocate_temp_dir_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_mut_connection(&header);
-        let source_dh = conn.get_dir_handle(args.source_directory_handle)?;
-        let path = combine_dh_path(source_dh, &args.directory_path);
-        // XXX verify existance etc
-
-        let volume_number = source_dh.volume_number.unwrap();
-        let (new_dh_index, new_dh) = conn.alloc_dir_handle(volume_number)?;
-        new_dh.path = path;
-        reply.add_u8(new_dh_index);
-        let access_rights_mask = 0xff; // TODO
-        reply.add_u8(access_rights_mask);
-        Ok(())
-    }
-
-    fn process_request_22_20_deallocate_dir_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::DeallocateDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_mut_connection(&header);
-        let dh = conn.get_mut_dir_handle(args.directory_handle)?;
-        *dh = handle::DirectoryHandle::zero();
-        Ok(())
-    }
-
-    fn process_request_76_open_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_connection(&header)?;
-        let dh = conn.get_dir_handle(args.directory_handle)?;
-        let path = self.create_system_path(dh, &args.filename)?;
-
-        let filename = extract_filename_from(&path)?;
-        if let Ok(f) = File::open(&path) {
-            let md = f.metadata()?;
-            let conn = self.clients.get_mut_connection(&header);
-            let (fh_index, _) = conn.allocate_file_handle(f)?;
-            reply.add_u32(0);
-            reply.add_u16(fh_index as u16);
-            reply.add_u16(0); // reserved
-            filename.to(reply);
-            reply.add_u8(0); // attributes
-            reply.add_u8(0); // file execute type
-            reply.add_u32(md.len() as u32); // file length
-            reply.add_u16(0); // creation date TODO
-            reply.add_u16(0); // last access date TODO
-            reply.add_u16(0); // last update date TODO
-            reply.add_u16(0); // last update time TODO
-            Ok(())
-        } else {
-            Err(NetWareError::InvalidPath)
-        }
-    }
-
-    fn process_request_72_read_from_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::ReadFromFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_mut_connection(&header);
-        let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
-        let mut file = fh.file.as_ref().unwrap();
-        file.seek(SeekFrom::Start(args.offset as u64))?;
-
-        let mut data = vec![ 0u8; args.length.into() ];
-        let count = file.read(&mut data)?;
-        reply.add_u16(count as u16);
-        // Reads from unaligned offsets must insert a dummy byte
-        let odd = args.offset & 1;
-        if odd != 0 { reply.add_u8(0); }
-        reply.add_data(&data[0..count]);
-        Ok(())
-    }
-
-    fn process_request_66_close_file(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::CloseFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_mut_connection(&header);
-        let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
-        *fh = handle::FileHandle::zero();
-        Ok(())
-    }
-
-    fn send(&mut self, dest: &IpxAddr, result: Result<(), NetWareError>, reply: &mut NcpReplyPacket) {
+    fn send(&self, dest: &IpxAddr, result: Result<(), NetWareError>, reply: &mut NcpReplyPacket) {
         match result {
             Ok(_) => { },
             Err(err) => {
@@ -428,7 +336,7 @@ impl<'a> NcpService<'a> {
                 self.process_request_33_negotiate_buffer_size(&header, &args, &mut reply)
             },
             ncp_parser::Request::FileSearchInit(args) => {
-                self.process_request_62_file_search_init(&header, &args, &mut reply)
+                process_request_62_file_search_init(&mut self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::FileSearchContinue(args) => {
                 self.process_request_63_file_search_continue(&header, &args, &mut reply)
@@ -448,20 +356,20 @@ impl<'a> NcpService<'a> {
             ncp_parser::Request::GetVolumeInfoWithHandle(args) => {
                 self.process_request_22_21_get_volume_info_with_handle(&header, &args, &mut reply)
             },
-            ncp_parser::Request::AllocateTemporaryDirectoryHandle(args) => {
-                self.process_request_22_19_allocate_temp_dir_handle(&header, &args, &mut reply)
-            },
             ncp_parser::Request::DeallocateDirectoryHandle(args) => {
-                self.process_request_22_20_deallocate_dir_handle(&header, &args, &mut reply)
+                process_request_22_20_deallocate_dir_handle(&mut self.clients, &header, &args, &mut reply)
+            },
+            ncp_parser::Request::AllocateTemporaryDirectoryHandle(args) => {
+                process_request_22_19_allocate_temp_dir_handle(&mut self.clients, &self.config, &header, &args, &mut reply)
             },
             ncp_parser::Request::OpenFile(args) => {
-                self.process_request_76_open_file(&header, &args, &mut reply)
+                process_request_76_open_file(&mut self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::ReadFromFile(args) => {
-                self.process_request_72_read_from_file(&header, &args, &mut reply)
+                process_request_72_read_from_file(&mut self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::CloseFile(args) => {
-                self.process_request_66_close_file(&header, &args, &mut reply)
+                process_request_66_close_file(&mut self.clients, &header, &args, &mut reply)
             },
         };
         self.send(dest, result, &mut reply);
@@ -473,7 +381,7 @@ impl<'a> NcpService<'a> {
             reply.set_completion_code(0xff);
             return Ok(())
         }
-        if let Ok(conn) = self.clients.allocate_connection(dest) {
+        if let Ok(conn) = self.clients.allocate_connection(self.config, dest) {
             reply.set_connection_number((conn + 1) as u8);
         } else {
             reply.set_completion_code(0xff);
@@ -488,26 +396,6 @@ impl<'a> NcpService<'a> {
             reply.set_completion_code(0xff);
         }
         Ok(())
-    }
-
-    fn create_system_path(&self, dh: &handle::DirectoryHandle, sub_path: &PathString) -> Result<String, NetWareError> {
-        let path = combine_dh_path(dh, sub_path);
-        let volume = self.get_volume_by_number(dh.volume_number.unwrap())?;
-        if !path.is_empty() {
-            let path = format!("{}/{}", volume.path, path);
-            return Ok(str::replace(&path, "\\", "/"))
-        }
-        Ok(volume.path.as_str().to_string())
-    }
-
-    fn get_volume_by_number(&self, volume: u8) -> Result<&config::Volume, NetWareError> {
-        let index = volume as usize;
-        let volumes = self.config.get_volumes();
-        return if index < volumes.len() {
-            Ok(&volumes[index])
-        } else {
-            Err(NetWareError::NoSuchVolume)
-        }
     }
 }
 
@@ -556,4 +444,107 @@ fn extract_filename_from(path: &str) -> Result<DosFileName, NetWareError> {
         p = &path;
     }
     DosFileName::from_str(p).ok_or(NetWareError::InvalidPath)
+}
+
+fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &PathString) -> Result<String, NetWareError> {
+    let path = combine_dh_path(dh, sub_path);
+    let volume = dh.volume.unwrap();
+    if !path.is_empty() {
+        let path = format!("{}/{}", volume.path, path);
+        return Ok(str::replace(&path, "\\", "/"))
+    }
+    Ok(volume.path.as_str().to_string())
+}
+
+
+fn process_request_62_file_search_init(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_mut_connection(&header); // XXX error handling ?
+    let source_dh = conn.get_dir_handle(args.handle)?;
+    let path = create_system_path(source_dh, &args.path)?;
+    let volume_nr = source_dh.volume.as_ref().unwrap().number;
+    let contents = retrieve_directory_contents(Path::new(&path))?;
+
+    // XXX verify existance, access etc
+    //let conn = clients.get_mut_connection(&header);
+    let sh = conn.allocate_search_handle(path, contents);
+    reply.add_u8(volume_nr);
+    let directory_id = sh.id;
+    reply.add_u16(directory_id);
+    let search_sequence_number = 0xffff;
+    reply.add_u16(search_sequence_number);
+    let dir_access_rights = 0xff;
+    reply.add_u8(dir_access_rights);
+    Ok(())
+}
+
+fn process_request_22_20_deallocate_dir_handle(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::DeallocateDirectoryHandle, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_mut_connection(&header);
+    let dh = conn.get_mut_dir_handle(args.directory_handle)?;
+    *dh = handle::DirectoryHandle::zero();
+    Ok(())
+}
+
+fn process_request_76_open_file(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_connection(&header)?;
+    let dh = conn.get_dir_handle(args.directory_handle)?;
+    let path = create_system_path(dh, &args.filename)?;
+
+    let filename = extract_filename_from(&path)?;
+    if let Ok(f) = File::open(&path) {
+        let md = f.metadata()?;
+        let conn = clients.get_mut_connection(&header);
+        let (fh_index, _) = conn.allocate_file_handle(f)?;
+        reply.add_u32(0);
+        reply.add_u16(fh_index as u16);
+        reply.add_u16(0); // reserved
+        filename.to(reply);
+        reply.add_u8(0); // attributes
+        reply.add_u8(0); // file execute type
+        reply.add_u32(md.len() as u32); // file length
+        reply.add_u16(0); // creation date TODO
+        reply.add_u16(0); // last access date TODO
+        reply.add_u16(0); // last update date TODO
+        reply.add_u16(0); // last update time TODO
+        Ok(())
+    } else {
+        Err(NetWareError::InvalidPath)
+    }
+}
+
+fn process_request_72_read_from_file(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::ReadFromFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_mut_connection(&header);
+    let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
+    let mut file = fh.file.as_ref().unwrap();
+    file.seek(SeekFrom::Start(args.offset as u64))?;
+
+    let mut data = vec![ 0u8; args.length.into() ];
+    let count = file.read(&mut data)?;
+    reply.add_u16(count as u16);
+    // Reads from unaligned offsets must insert a dummy byte
+    let odd = args.offset & 1;
+    if odd != 0 { reply.add_u8(0); }
+    reply.add_data(&data[0..count]);
+    Ok(())
+}
+
+fn process_request_66_close_file(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::CloseFile, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_mut_connection(&header);
+    let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
+    *fh = handle::FileHandle::zero();
+    Ok(())
+}
+
+fn process_request_22_19_allocate_temp_dir_handle<'a>(clients: &mut clients::Clients<'a>, config: &'a config::Configuration, header: &ncp_parser::NcpHeader, args: &ncp_parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_mut_connection(&header);
+    let source_dh = conn.get_dir_handle(args.source_directory_handle)?;
+    let path = combine_dh_path(source_dh, &args.directory_path);
+    // XXX verify existance etc
+
+    let volume_number = source_dh.volume.unwrap().number as usize;
+    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, volume_number)?;
+    new_dh.path = path;
+    reply.add_u8(new_dh_index);
+    let access_rights_mask = 0xff; // TODO
+    reply.add_u8(access_rights_mask);
+    Ok(())
 }

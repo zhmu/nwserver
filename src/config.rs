@@ -28,6 +28,7 @@ impl From<toml::de::Error> for ConfigError {
 }
 
 pub struct Volume {
+    pub number: u8,
     pub name: BoundedString< { consts::VOLUME_NAME_LENGTH }>,
     pub path: String,
 }
@@ -79,7 +80,8 @@ fn parse_volumes(config: &toml::Value) -> Result<Vec<Volume>, ConfigError> {
             let name = verify_and_convert_string(&name)?;
             if let Value::Table(t) = value {
                 if let Some(path) = t["path"].as_str() {
-                    volumes.push(Volume{ name: name, path: path.to_string() })
+                    let number = volumes.len() as u8;
+                    volumes.push(Volume{ number, name, path: path.to_string() })
                 }
             } else {
                 return Err(ConfigError::NoVolumeConfiguration)

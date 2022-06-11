@@ -1,14 +1,15 @@
 use crate::connection::Connection;
 use crate::consts;
+use crate::config;
 use crate::types::*;
 use crate::error::NetWareError;
 use crate::ncp_parser::NcpHeader;
 
-pub struct Clients {
-    client: [ Connection; consts::MAX_CONNECTIONS ],
+pub struct Clients<'a> {
+    client: [ Connection<'a>; consts::MAX_CONNECTIONS ],
 }
 
-impl Clients {
+impl<'a> Clients<'a> {
     pub fn new() -> Self {
         const CONN_INIT: Connection = Connection::zero();
         let client = [ CONN_INIT; consts::MAX_CONNECTIONS ];
@@ -19,11 +20,11 @@ impl Clients {
         self.client.iter().filter(|&e| e.in_use()).count()
     }
 
-    pub fn allocate_connection(&mut self, dest: &IpxAddr) -> Result<usize, NetWareError> {
+    pub fn allocate_connection(&mut self, config: &'a config::Configuration, dest: &IpxAddr) -> Result<usize, NetWareError> {
         for (n, conn) in self.client.iter_mut().enumerate() {
             if conn.in_use() { continue; }
 
-            *conn = Connection::allocate(dest);
+            *conn = Connection::allocate(config, dest);
             return Ok(n);
         }
         Err(NetWareError::NoConnectionsAvailable)
@@ -55,7 +56,7 @@ impl Clients {
     }
 
 
-    pub fn get_mut_connection(&mut self, header: &NcpHeader) -> &mut Connection {
+    pub fn get_mut_connection(&mut self, header: &NcpHeader) -> &mut Connection<'a> {
         let connection_number = header.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;

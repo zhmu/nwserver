@@ -204,7 +204,7 @@ impl Request {
     }
 
     fn from_2222_22<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
-        let sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
+        let _sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
         let sub_func = rdr.read_u8()?;
 /*
         if payload.len() != 2 + (sub_func_struc_len as usize) {
@@ -221,7 +221,7 @@ impl Request {
     }
 
     fn from_2222_23<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
-        let sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
+        let _sub_func_struc_len = rdr.read_u16::<BigEndian>()?;
         let sub_func = rdr.read_u8()?;
 /*
         if payload.len() != 2 + (sub_func_struc_len as usize) {

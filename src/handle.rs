@@ -1,5 +1,6 @@
 use crate::ncp::PathString; // TODO move this to types
 use crate::types::*;
+use crate::config;
 
 #[derive(Debug)]
 pub struct FileHandle {
@@ -16,20 +17,19 @@ impl FileHandle {
     }
 }
 
-#[derive(Debug,Clone,Copy)]
-pub struct DirectoryHandle {
-    pub volume_number: Option<u8>,
+pub struct DirectoryHandle<'a> {
+    pub volume: Option<&'a config::Volume>,
     pub path: PathString,
 }
 
-impl DirectoryHandle {
+impl<'a> DirectoryHandle<'a> {
     pub const fn zero() -> Self {
         let path = PathString::empty();
-        Self{ volume_number: None, path }
+        Self{ volume: None, path }
     }
 
     pub fn is_available(&self) -> bool {
-        self.volume_number.is_none()
+        self.volume.is_none()
     }
 }
 
