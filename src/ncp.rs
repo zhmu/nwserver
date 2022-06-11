@@ -137,158 +137,6 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 
-    fn process_request_23_17_get_fileserver_info(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerInfo, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        reply.add_data(self.config.get_server_name().buffer());
-        reply.add_u8(3); // FileServiceVersion
-        reply.add_u8(12); // FileServiceSubVersion
-        reply.add_u16(consts::MAX_CONNECTIONS as u16); // MaximumServiceConnections
-        let connections_in_use = self.clients.count_in_use() as u16;
-        reply.add_u16(connections_in_use);
-        reply.add_u16(1); // NumberMountedVolumes
-        reply.add_u8(0); // Revision
-        reply.add_u8(2); // SFTLevel
-        reply.add_u8(1); // TTSLevel
-        reply.add_u16(connections_in_use); // MaxConnectionsEverUsed
-        reply.add_u8(0); // AccountVersion
-        reply.add_u8(0); // VAPVersion
-        reply.add_u8(0); // QueueVersion
-        reply.add_u8(0); // PrintVersion
-        reply.add_u8(0); // VirtualConsoleVersion
-        reply.add_u8(0); // RestrictionLevel
-        reply.add_u8(0); // InternetBridge
-        reply.add_u8(0); // MixedModePathFlag
-        reply.add_u8(0); // LocalLoginInfoCcode
-        reply.add_u16(0); // ProductMajorVersion
-        reply.add_u16(0); // ProductMinorVersion
-        reply.add_u16(0); // ProductRevisionVersion
-        reply.add_u8(0); // OSLanguageID
-        reply.add_u8(0); // 64BitOffsetsSupportedFlag
-        reply.fill_u8(50, 0); // Reserved
-        Ok(())
-    }
-
-    fn process_request_23_61_read_property_value(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::ReadPropertyValue, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        Err(NetWareError::NoSuchSet)
-    }
-
-    fn process_request_33_negotiate_buffer_size(&mut self, _header: &ncp_parser::NcpHeader, args: &ncp_parser::NegotiateBufferSize, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let accepted_buffer_size = if args.proposed_buffer_size > MAX_BUFFER_SIZE { MAX_BUFFER_SIZE } else { args.proposed_buffer_size };
-
-        reply.add_u16(accepted_buffer_size);
-        Ok(())
-    }
-
-    fn process_request_63_file_search_continue(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchContinue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_connection(&header)?;
-        if let Some(sh) = conn.get_search_handle(args.directory_id) {
-            if let Some(path) = &sh.path {
-                if let Some(entries) = &sh.entries {
-                    let mut index = args.search_sequence as usize;
-                    if index == 0xffff { index = 0; }
-
-                    let want_files = (args.search_attr & SA_SUBDIR_ONLY) == 0;
-                    let want_dirs = (args.search_attr & SA_SUBDIR_ONLY) != 0;
-                    while index < entries.len() {
-                        let entry = entries[index];
-                        index += 1;
-
-                        if !entry.matches(&args.search_path.data()) { continue; }
-
-                        // XXX verify match, etc.
-                        let p = format!("{}/{}", path, entry);
-                        if let Ok(md) = std::fs::metadata(&p) {
-                            let ft = md.file_type();
-                            if ft.is_dir() && want_dirs {
-                                reply.add_u16(index as u16); // search sequence
-                                reply.add_u16(args.directory_id); // directory id
-                                entry.to(reply); // file name
-                                let attr = ATTR_SUBDIRECTORY;
-                                reply.add_u8(attr); // directory attributes
-                                reply.add_u8(0xff); // directory access rights
-                                reply.add_u16(0); // creation date
-                                reply.add_u16(0); // creation time
-                                reply.add_u32(0); // owner id
-                                reply.add_u16(0); // reserved
-                                reply.add_u16(0xd1d1); // directory magic
-                                return Ok(())
-                            }
-                            if ft.is_file() && want_files {
-                                reply.add_u16(index as u16); // search sequence
-                                reply.add_u16(args.directory_id); // directory id
-                                entry.to(reply); // file name
-                                reply.add_u8(0); // file attributes
-                                reply.add_u8(0); // file mode
-                                reply.add_u32(md.len() as u32); // file length
-                                reply.add_u16(0); // creation date
-                                reply.add_u16(0); // access date
-                                reply.add_u16(0); // update date
-                                reply.add_u16(0); // update time
-                                return Ok(())
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Err(NetWareError::NoFilesFound)
-    }
-
-    fn process_request_97_get_big_packet_ncp_max_packet_size(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetBigPacketNCPMaxPacketSize, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        Err(NetWareError::UnsupportedRequest)
-    }
-
-    fn process_request_101_packet_burst_connection_request(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::PacketBurstConnectionRequest, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        Err(NetWareError::UnsupportedRequest)
-    }
-
-    fn process_request_20_get_fileserver_date_and_time(&mut self, _header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerDateAndTime, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let now = Local::now();
-
-        reply.add_u8((now.year() - 1900) as u8); // Year
-        reply.add_u8(now.month() as u8); // Month
-        reply.add_u8(now.day() as u8); // Day
-        reply.add_u8(now.hour() as u8); // Hour
-        reply.add_u8(now.minute() as u8); // Minute
-        reply.add_u8(now.second() as u8); // Second
-        let weekday = now.date().weekday();
-        reply.add_u8(weekday.num_days_from_sunday() as u8); // Day of the week
-        Ok(())
-    }
-
-    fn process_request_22_3_get_effective_directory_rights(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_connection(&header)?;
-        let dh = conn.get_dir_handle(args.directory_handle)?;
-        let path = create_system_path(dh, &args.directory_path)?;
-        let md = std::fs::metadata(&path)?;
-        if !md.file_type().is_dir() {
-            return Err(NetWareError::InvalidPath);
-        }
-        let effective_rights_mask = 0xffff;
-        reply.add_u16(effective_rights_mask);
-        Ok(())
-    }
-
-    fn process_request_22_21_get_volume_info_with_handle(&mut self, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-        let conn = self.clients.get_connection(&header)?;
-        let dh = conn.get_dir_handle(args.directory_handle)?;
-        let volume = dh.volume.unwrap();
-
-        let sectors_per_cluster = 128; // 64k
-        reply.add_u16(sectors_per_cluster);
-        let total_volume_sectors = 1000;
-        reply.add_u16(total_volume_sectors);
-        let available_clusters = 900;
-        reply.add_u16(available_clusters);
-        let total_directory_slots = 1000;
-        reply.add_u16(total_directory_slots);
-        let available_directory_slots = 1000;
-        reply.add_u16(available_directory_slots);
-        volume.name.to_raw(reply);
-        let removable_flag = 0;
-        reply.add_u16(removable_flag);
-        Ok(())
-    }
-
     fn send(&self, dest: &IpxAddr, result: Result<(), NetWareError>, reply: &mut NcpReplyPacket) {
         match result {
             Ok(_) => { },
@@ -327,34 +175,34 @@ impl<'a> NcpService<'a> {
                 self.destroy_service_connection(header, dest, &args, &mut reply)
             },
             ncp_parser::Request::GetFileServerInfo(args) => {
-                self.process_request_23_17_get_fileserver_info(&header, &args, &mut reply)
+                process_request_23_17_get_fileserver_info(self.config, &self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::ReadPropertyValue(args) => {
-                self.process_request_23_61_read_property_value(&header, &args, &mut reply)
+                process_request_23_61_read_property_value(&header, &args, &mut reply)
             },
             ncp_parser::Request::NegotiateBufferSize(args) => {
-                self.process_request_33_negotiate_buffer_size(&header, &args, &mut reply)
+                process_request_33_negotiate_buffer_size(&header, &args, &mut reply)
             },
             ncp_parser::Request::FileSearchInit(args) => {
                 process_request_62_file_search_init(&mut self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::FileSearchContinue(args) => {
-                self.process_request_63_file_search_continue(&header, &args, &mut reply)
+                process_request_63_file_search_continue(&mut self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::GetBigPacketNCPMaxPacketSize(args) => {
-                self.process_request_97_get_big_packet_ncp_max_packet_size(&header, &args, &mut reply)
+                process_request_97_get_big_packet_ncp_max_packet_size(&header, &args, &mut reply)
             },
             ncp_parser::Request::PacketBurstConnectionRequest(args) => {
-                self.process_request_101_packet_burst_connection_request(&header, &args, &mut reply)
+                process_request_101_packet_burst_connection_request(&header, &args, &mut reply)
             },
             ncp_parser::Request::GetFileServerDateAndTime(args) => {
-                self.process_request_20_get_fileserver_date_and_time(&header, &args, &mut reply)
+                process_request_20_get_fileserver_date_and_time(&header, &args, &mut reply)
             },
             ncp_parser::Request::GetEffectiveDirectoryRights(args) => {
-                self.process_request_22_3_get_effective_directory_rights(&header, &args, &mut reply)
+                process_request_22_3_get_effective_directory_rights(&mut self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::GetVolumeInfoWithHandle(args) => {
-                self.process_request_22_21_get_volume_info_with_handle(&header, &args, &mut reply)
+                process_request_22_21_get_volume_info_with_handle(&self.clients, &header, &args, &mut reply)
             },
             ncp_parser::Request::DeallocateDirectoryHandle(args) => {
                 process_request_22_20_deallocate_dir_handle(&mut self.clients, &header, &args, &mut reply)
@@ -546,5 +394,157 @@ fn process_request_22_19_allocate_temp_dir_handle<'a>(clients: &mut clients::Cli
     reply.add_u8(new_dh_index);
     let access_rights_mask = 0xff; // TODO
     reply.add_u8(access_rights_mask);
+    Ok(())
+}
+
+fn process_request_23_17_get_fileserver_info(config: &config::Configuration, clients: &clients::Clients,_header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerInfo, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    reply.add_data(config.get_server_name().buffer());
+    reply.add_u8(3); // FileServiceVersion
+    reply.add_u8(12); // FileServiceSubVersion
+    reply.add_u16(consts::MAX_CONNECTIONS as u16); // MaximumServiceConnections
+    let connections_in_use = clients.count_in_use() as u16;
+    reply.add_u16(connections_in_use);
+    reply.add_u16(1); // NumberMountedVolumes
+    reply.add_u8(0); // Revision
+    reply.add_u8(2); // SFTLevel
+    reply.add_u8(1); // TTSLevel
+    reply.add_u16(connections_in_use); // MaxConnectionsEverUsed
+    reply.add_u8(0); // AccountVersion
+    reply.add_u8(0); // VAPVersion
+    reply.add_u8(0); // QueueVersion
+    reply.add_u8(0); // PrintVersion
+    reply.add_u8(0); // VirtualConsoleVersion
+    reply.add_u8(0); // RestrictionLevel
+    reply.add_u8(0); // InternetBridge
+    reply.add_u8(0); // MixedModePathFlag
+    reply.add_u8(0); // LocalLoginInfoCcode
+    reply.add_u16(0); // ProductMajorVersion
+    reply.add_u16(0); // ProductMinorVersion
+    reply.add_u16(0); // ProductRevisionVersion
+    reply.add_u8(0); // OSLanguageID
+    reply.add_u8(0); // 64BitOffsetsSupportedFlag
+    reply.fill_u8(50, 0); // Reserved
+    Ok(())
+}
+
+fn process_request_23_61_read_property_value(_header: &ncp_parser::NcpHeader, _args: &ncp_parser::ReadPropertyValue, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    Err(NetWareError::NoSuchSet)
+}
+
+fn process_request_33_negotiate_buffer_size(_header: &ncp_parser::NcpHeader, args: &ncp_parser::NegotiateBufferSize, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let accepted_buffer_size = if args.proposed_buffer_size > MAX_BUFFER_SIZE { MAX_BUFFER_SIZE } else { args.proposed_buffer_size };
+
+    reply.add_u16(accepted_buffer_size);
+    Ok(())
+}
+
+fn process_request_63_file_search_continue(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::FileSearchContinue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_connection(&header)?;
+    if let Some(sh) = conn.get_search_handle(args.directory_id) {
+        if let Some(path) = &sh.path {
+            if let Some(entries) = &sh.entries {
+                let mut index = args.search_sequence as usize;
+                if index == 0xffff { index = 0; }
+
+                let want_files = (args.search_attr & SA_SUBDIR_ONLY) == 0;
+                let want_dirs = (args.search_attr & SA_SUBDIR_ONLY) != 0;
+                while index < entries.len() {
+                    let entry = entries[index];
+                    index += 1;
+
+                    if !entry.matches(&args.search_path.data()) { continue; }
+
+                    // XXX verify match, etc.
+                    let p = format!("{}/{}", path, entry);
+                    if let Ok(md) = std::fs::metadata(&p) {
+                        let ft = md.file_type();
+                        if ft.is_dir() && want_dirs {
+                            reply.add_u16(index as u16); // search sequence
+                            reply.add_u16(args.directory_id); // directory id
+                            entry.to(reply); // file name
+                            let attr = ATTR_SUBDIRECTORY;
+                            reply.add_u8(attr); // directory attributes
+                            reply.add_u8(0xff); // directory access rights
+                            reply.add_u16(0); // creation date
+                            reply.add_u16(0); // creation time
+                            reply.add_u32(0); // owner id
+                            reply.add_u16(0); // reserved
+                            reply.add_u16(0xd1d1); // directory magic
+                            return Ok(())
+                        }
+                        if ft.is_file() && want_files {
+                            reply.add_u16(index as u16); // search sequence
+                            reply.add_u16(args.directory_id); // directory id
+                            entry.to(reply); // file name
+                            reply.add_u8(0); // file attributes
+                            reply.add_u8(0); // file mode
+                            reply.add_u32(md.len() as u32); // file length
+                            reply.add_u16(0); // creation date
+                            reply.add_u16(0); // access date
+                            reply.add_u16(0); // update date
+                            reply.add_u16(0); // update time
+                            return Ok(())
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err(NetWareError::NoFilesFound)
+}
+
+fn process_request_97_get_big_packet_ncp_max_packet_size(_header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetBigPacketNCPMaxPacketSize, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    Err(NetWareError::UnsupportedRequest)
+}
+
+fn process_request_101_packet_burst_connection_request(_header: &ncp_parser::NcpHeader, _args: &ncp_parser::PacketBurstConnectionRequest, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    Err(NetWareError::UnsupportedRequest)
+}
+
+fn process_request_20_get_fileserver_date_and_time(_header: &ncp_parser::NcpHeader, _args: &ncp_parser::GetFileServerDateAndTime, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let now = Local::now();
+
+    reply.add_u8((now.year() - 1900) as u8); // Year
+    reply.add_u8(now.month() as u8); // Month
+    reply.add_u8(now.day() as u8); // Day
+    reply.add_u8(now.hour() as u8); // Hour
+    reply.add_u8(now.minute() as u8); // Minute
+    reply.add_u8(now.second() as u8); // Second
+    let weekday = now.date().weekday();
+    reply.add_u8(weekday.num_days_from_sunday() as u8); // Day of the week
+    Ok(())
+}
+
+fn process_request_22_3_get_effective_directory_rights(clients: &mut clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_connection(&header)?;
+    let dh = conn.get_dir_handle(args.directory_handle)?;
+    let path = create_system_path(dh, &args.directory_path)?;
+    let md = std::fs::metadata(&path)?;
+    if !md.file_type().is_dir() {
+        return Err(NetWareError::InvalidPath);
+    }
+    let effective_rights_mask = 0xffff;
+    reply.add_u16(effective_rights_mask);
+    Ok(())
+}
+
+fn process_request_22_21_get_volume_info_with_handle(clients: &clients::Clients, header: &ncp_parser::NcpHeader, args: &ncp_parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let conn = clients.get_connection(&header)?;
+    let dh = conn.get_dir_handle(args.directory_handle)?;
+    let volume = dh.volume.unwrap();
+
+    let sectors_per_cluster = 128; // 64k
+    reply.add_u16(sectors_per_cluster);
+    let total_volume_sectors = 1000;
+    reply.add_u16(total_volume_sectors);
+    let available_clusters = 900;
+    reply.add_u16(available_clusters);
+    let total_directory_slots = 1000;
+    reply.add_u16(total_directory_slots);
+    let available_directory_slots = 1000;
+    reply.add_u16(available_directory_slots);
+    volume.name.to_raw(reply);
+    let removable_flag = 0;
+    reply.add_u16(removable_flag);
     Ok(())
 }
