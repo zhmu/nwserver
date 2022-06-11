@@ -30,47 +30,26 @@ impl<'a> Clients<'a> {
         Err(NetWareError::NoConnectionsAvailable)
     }
 
-    pub fn get_connection_index(&self, dest: &IpxAddr, header: &NcpHeader) -> Result<usize, NetWareError> {
+    pub fn get_mut_connection(&mut self, header: &NcpHeader, dest: &IpxAddr) -> Result<&mut Connection<'a>, NetWareError> {
         let connection_number = header.connection_number as usize;
         if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
             let index = connection_number - 1;
-            let conn = &self.client[index];
+            let conn = &mut self.client[index];
             if conn.dest == *dest {
-                return Ok(index);
+                return Ok(conn);
             }
         }
         Err(NetWareError::ConnectionNotLoggedIn)
     }
 
-    pub fn get_connection(&self, header: &NcpHeader) -> Result<&Connection, NetWareError> {
-        self.get_connection_by_number(header.connection_number)
-    }
-
-    pub fn get_connection_by_number(&self, nr: u8) -> Result<&Connection, NetWareError> {
-        let nr = nr as usize;
-        if nr >= 1 && nr < consts::MAX_CONNECTIONS {
-            let index = nr - 1;
-            return Ok(&self.client[index]);
-        }
-        Err(NetWareError::ConnectionNotLoggedIn)
-    }
-
-
-    pub fn get_mut_connection(&mut self, header: &NcpHeader) -> &mut Connection<'a> {
-        let connection_number = header.connection_number as usize;
-        if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
-            let index = connection_number - 1;
-            return &mut self.client[index];
-        }
-        unreachable!()
-    }
-
+/*
     pub fn disconnect(&mut self, dest: &IpxAddr, header: &NcpHeader) -> Result<(), NetWareError> {
         let index = self.get_connection_index(dest, header)?;
         let conn = &mut self.client[index];
         *conn = Connection::zero();
         Ok(())
     }
+*/
 
 }
 
