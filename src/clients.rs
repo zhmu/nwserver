@@ -3,7 +3,7 @@ use crate::consts;
 use crate::config;
 use crate::types::*;
 use crate::error::NetWareError;
-use crate::ncp_parser::NcpHeader;
+use crate::ncp::parser::NcpHeader;
 
 pub struct Clients<'a> {
     client: [ Connection<'a>; consts::MAX_CONNECTIONS ],

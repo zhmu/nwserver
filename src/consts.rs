@@ -12,3 +12,6 @@ pub const SERVER_NAME_LENGTH: usize = 48;
 pub const MAX_SEARCH_HANDLES: usize = 16;
 pub const MAX_DIR_HANDLES: usize = 32;
 pub const MAX_OPEN_FILES: usize = 16;
+
+// Number of payload bytes within a NCP packet (without NCP request header)
+pub const MAX_PAYLOAD_SIZE: usize = 1024;

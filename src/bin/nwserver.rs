@@ -6,7 +6,7 @@ use pretty_env_logger;
 use nwserver::ipx;
 use nwserver::rip;
 use nwserver::sap;
-use nwserver::ncp;
+use nwserver::ncp_service;
 use nwserver::consts;
 use nwserver::config;
 
@@ -15,14 +15,14 @@ struct NWServer<'a> {
     _tx: &'a ipx::Transmitter,
     rip: rip::RipService<'a>,
     sap: sap::SapService<'a>,
-    ncp: ncp::NcpService<'a>,
+    ncp: ncp_service::NcpService<'a>,
 }
 
 impl<'a> NWServer<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
         let sap = sap::SapService::new(&config, &tx);
         let rip = rip::RipService::new(&config, &tx);
-        let ncp = ncp::NcpService::new(&config, &tx);
+        let ncp = ncp_service::NcpService::new(&config, &tx);
         NWServer{ _config: &config, _tx: tx, sap, rip, ncp }
     }
 
