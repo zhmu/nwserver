@@ -1,3 +1,9 @@
+/*-
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Copyright (c) 2022 Rink Springer <rink@rink.nu>
+ * For conditions of distribution and use, see LICENSE file
+ */
 use pnet::packet::ethernet::EtherTypes;
 use pnet_macros::packet;
 use pnet_macros_support::types::*;

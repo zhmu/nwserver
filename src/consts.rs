@@ -1,3 +1,9 @@
+/*-
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Copyright (c) 2022 Rink Springer <rink@rink.nu>
+ * For conditions of distribution and use, see LICENSE file
+ */
 pub const IPX_SOCKET_NCP: u16 = 0x451;
 pub const IPX_SOCKET_SAP: u16 = 0x452;
 pub const IPX_SOCKET_RIP: u16 = 0x453;
