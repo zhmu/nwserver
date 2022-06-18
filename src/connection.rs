@@ -100,19 +100,18 @@ impl<'a> Connection<'a> {
         None
     }
 
-    pub fn allocate_file_handle(&mut self, file: std::fs::File) -> Result<(u8, &mut handle::FileHandle), NetWareError> {
+    pub fn allocate_file_handle(&mut self, file: std::fs::File) -> Result<(usize, &mut handle::FileHandle), NetWareError> {
         for (n, fh) in self.file_handle.iter_mut().enumerate() {
             if !fh.is_available() { continue; }
 
             *fh = handle::FileHandle::zero();
             fh.file = Some(file);
-            return Ok(((n + 1) as u8, fh))
+            return Ok(((n + 1), fh))
         }
         Err(NetWareError::OutOfHandles)
     }
 
-    pub fn get_mut_file_handle(&mut self, index: u8) -> Result<&mut handle::FileHandle, NetWareError> {
-        let index = index as usize;
+    pub fn get_mut_file_handle(&mut self, index: usize) -> Result<&mut handle::FileHandle, NetWareError> {
         return if index >= 1 && index < self.file_handle.len() {
             Ok(&mut self.file_handle[index - 1])
         } else {

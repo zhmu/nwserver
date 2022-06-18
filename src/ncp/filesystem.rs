@@ -162,8 +162,8 @@ pub fn process_request_76_open_file(conn: &mut connection::Connection, args: &pa
     if let Ok(f) = File::open(&path) {
         let md = f.metadata()?;
         let (fh_index, _) = conn.allocate_file_handle(f)?;
-        reply.add_u32(0);
-        reply.add_u16(fh_index as u16);
+        let ncp_fh = NcpFileHandle::new(fh_index);
+        ncp_fh.to(reply);
         reply.add_u16(0); // reserved
         filename.to(reply);
         reply.add_u8(0); // attributes
@@ -180,7 +180,7 @@ pub fn process_request_76_open_file(conn: &mut connection::Connection, args: &pa
 }
 
 pub fn process_request_72_read_from_file(conn: &mut connection::Connection, args: &parser::ReadFromFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
+    let fh = conn.get_mut_file_handle(args.file_handle.get_value())?;
     let mut file = fh.file.as_ref().unwrap();
     file.seek(SeekFrom::Start(args.offset as u64))?;
 
@@ -195,7 +195,7 @@ pub fn process_request_72_read_from_file(conn: &mut connection::Connection, args
 }
 
 pub fn process_request_66_close_file(conn: &mut connection::Connection, args: &parser::CloseFile, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let fh = conn.get_mut_file_handle(args.file_handle as u8)?;
+    let fh = conn.get_mut_file_handle(args.file_handle.get_value())?;
     *fh = handle::FileHandle::zero();
     Ok(())
 }

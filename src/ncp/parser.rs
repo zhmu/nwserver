@@ -135,8 +135,9 @@ pub struct OpenFile {
 pub struct ReadFromFile {
     #[descr="Read from file"]
     _reserved: u8,
-    _file_handle_hi: u32,
-    pub file_handle: u16,
+    pub file_handle: NcpFileHandle,
+    //_file_handle_hi: u32,
+    //pub file_handle: u16,
     pub offset: u32,
     pub length: u16,
 }
@@ -145,8 +146,7 @@ pub struct ReadFromFile {
 pub struct CloseFile {
     #[descr="Close file"]
     _reserved: u8,
-    _file_handle_hi: u32,
-    pub file_handle: u16,
+    pub file_handle: NcpFileHandle,
 }
 
 #[derive(NcpPacket)]

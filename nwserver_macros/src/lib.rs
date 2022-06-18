@@ -9,7 +9,7 @@ enum Type {
     U16,
     U32,
     MaxBoundedString,
-    PathString,
+    NcpFileHandle,
 }
 
 struct Field {
@@ -34,7 +34,7 @@ fn parse_type(ty: &syn::Type) -> Option<Type> {
         "u16" => Some(Type::U16),
         "u32" => Some(Type::U32),
         "MaxBoundedString" => Some(Type::MaxBoundedString),
-        "PathString" => Some(Type::PathString),
+        "NcpFileHandle" => Some(Type::NcpFileHandle),
         _ => { None }
     }
 }
@@ -45,7 +45,7 @@ fn generate_read_for_type(ty: &Type, rdr: &str) -> String {
         Type::U16 => { format!("{rdr}.read_u16::<BigEndian>()?", rdr=rdr) },
         Type::U32 => { format!("{rdr}.read_u32::<BigEndian>()?", rdr=rdr) },
         Type::MaxBoundedString => { format!("MaxBoundedString::from({rdr})?", rdr=rdr) },
-        Type::PathString => { format!("PathString::from({rdr})?", rdr=rdr) },
+        Type::NcpFileHandle => { format!("NcpFileHandle::from({rdr})?", rdr=rdr) },
     }
 }
 

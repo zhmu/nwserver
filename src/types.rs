@@ -337,6 +337,47 @@ impl fmt::Debug for DosFileName {
     }
 }
 
+pub struct NcpFileHandle(pub u16);
+
+impl NcpFileHandle {
+    pub const fn empty() -> Self {
+        Self(0)
+    }
+
+    pub fn new(handle: usize) -> Self {
+        Self(handle as u16)
+    }
+
+    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let a = rdr.read_u16::<BigEndian>()?;
+        let b = rdr.read_u32::<BigEndian>()?;
+        if b != 0 { return Err(NetWareError::InvalidFileHandle) }
+        Ok(Self(a))
+    }
+
+    pub fn to<T: DataStreamer>(&self, out: &mut T) -> Option<()> {
+        out.add_u16(self.0);
+        out.add_u32(0);
+        Some(())
+    }
+
+    pub fn get_value(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl fmt::Display for NcpFileHandle {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!( fmt, "{}", self.0)
+    }
+}
+
+impl fmt::Debug for NcpFileHandle {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, fmt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::types::DosFileName;
