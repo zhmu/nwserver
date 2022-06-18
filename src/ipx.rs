@@ -16,9 +16,6 @@ use pnet::datalink;
 use log::*;
 use crate::types::IpxAddr;
 
-use std::fs::File;
-use std::io::Write;
-
 const ETHERNET_HEADER_LENGTH: usize = 14;
 const IPX_HEADER_LENGTH: usize = 30;
 
@@ -99,9 +96,6 @@ impl Transmitter {
             ipx_packet.set_payload(payload);
         }
 
-        let mut f = File::create("/tmp/last-send-ipx.bin").unwrap();
-        f.write(&buffer).unwrap();
-
         match self.tx.borrow_mut().send_to(&buffer, None) {
             Some(v) => {
                 match v {
@@ -112,21 +106,36 @@ impl Transmitter {
             None => { error!("unable to send IPX packet") },
         }
     }
+}
 
+pub struct Interface {
+    pub name: String,
+    pub descr: String,
+}
+
+pub fn get_network_interfaces() -> Vec<Interface> {
+    let mut result: Vec<Interface> = Vec::new();
+    for i in datalink::interfaces() {
+        result.push(Interface{ name: i.name, descr: i.description });
+    }
+    result
 }
 
 pub fn create_endpoint(interface: &str) -> Result<(Receiver, Transmitter), std::io::Error> {
-    let interface_name_match = |iface: &NetworkInterface| iface.name == interface;
+    // On UNIX, interface names are the norm. Yet on Windows, it is easier to
+    // match a description. We attempt both here.
+    let interface_name_match = |iface: &NetworkInterface| iface.name == interface || iface.description == interface;
 
-    let interfaces = datalink::interfaces();
-    let interface = interfaces.into_iter()
-                        .filter(interface_name_match)
-                        .next()
-                        .unwrap();
-    let mac = interface.mac.unwrap();
+    let net_interface = datalink::interfaces().into_iter().filter(interface_name_match).next();
+    if net_interface.is_none() {
+        let err_string = format!("network interface '{}' not found", interface);
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, err_string));
+    }
+    let net_interface = net_interface.unwrap();
+    let mac = net_interface.mac.unwrap();
 
     let config = datalink::Config{ ..Default::default() };
-    let (tx, rx) = match datalink::channel(&interface, config) {
+    let (tx, rx) = match datalink::channel(&net_interface, config) {
         Ok(Ethernet(tx, rx)) => (tx, rx),
         Ok(_) => panic!("Unhandled channel type"),
         Err(e) => { return Err(e); }

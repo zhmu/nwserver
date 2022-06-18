@@ -60,7 +60,17 @@ fn main() -> Result<(), std::io::Error> {
     let mut config = config.unwrap();
 
     let interface = config.get_network_interface();
-    let (mut receiver, transmitter) = ipx::create_endpoint(interface)?;
+    let endpoint = ipx::create_endpoint(interface);
+    if let Err(e) = &endpoint {
+        println!("Unable to create IPX endpoint: {}", e);
+        println!();
+        println!("Listing all available network interfaces:");
+        for i in ipx::get_network_interfaces() {
+            println!("{} {}", i.name, i.descr);
+        }
+        return Ok(())
+    }
+    let (mut receiver, transmitter) = endpoint.unwrap();
     info!("Using interface {} mac {}", interface, transmitter.get_mac_address());
 
     config.set_mac_address(&transmitter.get_mac_address());
