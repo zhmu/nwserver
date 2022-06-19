@@ -32,7 +32,7 @@ const _ATTR_SHAREABLE: u8 = 0x80;
 
 pub fn process_request_62_file_search_init(conn: &mut connection::Connection, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let source_dh = conn.get_dir_handle(args.handle)?;
-    let path = create_system_path(source_dh, &args.path)?;
+    let path = create_system_path(source_dh, &args.path);
     let volume_nr = source_dh.volume.as_ref().unwrap().number;
     let contents = retrieve_directory_contents(Path::new(&path))?;
 
@@ -104,7 +104,7 @@ pub fn process_request_63_file_search_continue(conn: &mut connection::Connection
 
 pub fn process_request_22_3_get_effective_directory_rights(conn: &mut connection::Connection, args: &parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let dh = conn.get_dir_handle(args.directory_handle)?;
-    let path = create_system_path(dh, &args.directory_path)?;
+    let path = create_system_path(dh, &args.directory_path);
     let md = std::fs::metadata(&path)?;
     if !md.file_type().is_dir() {
         return Err(NetWareError::InvalidPath);
@@ -142,21 +142,41 @@ pub fn process_request_22_20_deallocate_dir_handle(conn: &mut connection::Connec
 
 pub fn process_request_22_19_allocate_temp_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let source_dh = conn.get_dir_handle(args.source_directory_handle)?;
-    let path = combine_dh_path(source_dh, &args.directory_path);
-    // XXX verify existance etc
 
+    // Create the new handle as-is
     let volume_number = source_dh.volume.unwrap().number as usize;
     let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, volume_number)?;
-    new_dh.path = path;
+    new_dh.path = args.directory_path;
+
+    // Verify whether the path exists
+    let path = create_system_path(new_dh, &MaxBoundedString::empty());
+    let md = std::fs::metadata(&path);
+    if md.is_err() || !md.unwrap().is_dir() {
+        *new_dh = handle::DirectoryHandle::zero();
+        return Err(NetWareError::InvalidPath);
+    }
+
     reply.add_u8(new_dh_index);
     let access_rights_mask = 0xff; // TODO
     reply.add_u8(access_rights_mask);
     Ok(())
 }
 
+pub fn process_request_22_1_get_directory_path<'a>(conn: &mut connection::Connection<'a>, args: &parser::GetDirectoryPath, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let dh = conn.get_mut_dir_handle(args.directory_handle)?;
+    // TODO does dh.path contain the proper seperators ?
+    let volume = dh.volume.unwrap();
+    let length = volume.name.len() + 1 + dh.path.len();
+    reply.add_u8(length as u8);
+    reply.add_data(&volume.name.data()[0..volume.name.len()]);
+    reply.add_u8(0x3a); // :
+    reply.add_data(&dh.path.data()[0..dh.path.len()]);
+    Ok(())
+}
+
 pub fn process_request_76_open_file(conn: &mut connection::Connection, args: &parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let dh = conn.get_dir_handle(args.directory_handle)?;
-    let path = create_system_path(dh, &args.filename)?;
+    let path = create_system_path(dh, &args.filename);
 
     let filename = extract_filename_from(&path)?;
     if let Ok(f) = File::open(&path) {
@@ -200,14 +220,14 @@ pub fn process_request_66_close_file(conn: &mut connection::Connection, args: &p
     Ok(())
 }
 
-fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> Result<String, NetWareError> {
+fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> String {
     let path = combine_dh_path(dh, sub_path);
     let volume = dh.volume.unwrap();
     if !path.is_empty() {
         let path = format!("{}/{}", volume.path, path);
-        return Ok(str::replace(&path, "\\", "/"))
+        return str::replace(&path, "\\", "/")
     }
-    Ok(volume.path.as_str().to_string())
+    volume.path.as_str().to_string()
 }
 
 fn retrieve_directory_contents(path: &Path) -> Result<Vec<DosFileName>, std::io::Error> {

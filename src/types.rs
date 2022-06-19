@@ -121,6 +121,10 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
         &self.data[0..self.length]
     }
 
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
     pub fn is_empty(&self) -> bool {
         self.length == 0
     }

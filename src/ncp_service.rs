@@ -202,6 +202,9 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::AllocateTemporaryDirectoryHandle(args) => {
                 ncp::filesystem::process_request_22_19_allocate_temp_dir_handle(conn, &self.config, &args, &mut reply)
             },
+            ncp::parser::Request::GetDirectoryPath(args) => {
+                ncp::filesystem::process_request_22_1_get_directory_path(conn, &args, &mut reply)
+            },
             ncp::parser::Request::OpenFile(args) => {
                 ncp::filesystem::process_request_76_open_file(conn, &args, &mut reply)
             },

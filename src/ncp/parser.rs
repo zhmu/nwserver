@@ -136,8 +136,6 @@ pub struct ReadFromFile {
     #[descr="Read from file"]
     _reserved: u8,
     pub file_handle: NcpFileHandle,
-    //_file_handle_hi: u32,
-    //pub file_handle: u16,
     pub offset: u32,
     pub length: u16,
 }
@@ -147,6 +145,12 @@ pub struct CloseFile {
     #[descr="Close file"]
     _reserved: u8,
     pub file_handle: NcpFileHandle,
+}
+
+#[derive(NcpPacket)]
+pub struct GetDirectoryPath {
+    #[descr="Get directory path"]
+    pub directory_handle: u8,
 }
 
 #[derive(NcpPacket)]
@@ -175,6 +179,7 @@ pub enum Request {
     OpenFile(OpenFile),
     ReadFromFile(ReadFromFile),
     CloseFile(CloseFile),
+    GetDirectoryPath(GetDirectoryPath),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -217,6 +222,7 @@ impl Request {
         }
 */
         return match sub_func {
+            1 => { Ok(Request::GetDirectoryPath(GetDirectoryPath::from(rdr)?)) },
             3 => { Ok(Request::GetEffectiveDirectoryRights(GetEffectiveDirectoryRights::from(rdr)?)) },
             19 => { Ok(Request::AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle::from(rdr)?)) },
             20 => { Ok(Request::DeallocateDirectoryHandle(DeallocateDirectoryHandle::from(rdr)?)) },
