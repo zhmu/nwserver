@@ -220,6 +220,46 @@ pub fn process_request_66_close_file(conn: &mut connection::Connection, args: &p
     Ok(())
 }
 
+pub fn process_request_64_search_for_file(conn: &mut connection::Connection, args: &parser::SearchForFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let source_dh = conn.get_dir_handle(args.directory_handle)?;
+
+    // Split the filename in a path / filename part
+    let (path, filename) = split_path(&args.filename);
+
+    let path = create_system_path(source_dh, &path);
+    let entries = retrieve_directory_contents(Path::new(&path))?;
+
+    let mut index = args.last_search_index as usize;
+    if index == 0xffff { index = 0; }
+
+    while index < entries.len() {
+        let entry = entries[index];
+        index += 1;
+
+        if !entry.matches(&filename.data()) { continue; }
+
+        // XXX verify match, etc.
+        let p = format!("{}/{}", path, entry);
+        if let Ok(md) = std::fs::metadata(&p) {
+            if md.file_type().is_file() {
+                reply.add_u16(index as u16); // next search index
+                reply.add_u16(0); // reserved
+                entry.to(reply); // file name
+                let attr = 0;
+                reply.add_u8(attr); // file attributes
+                reply.add_u8(0); // file execute type
+                reply.add_u32(md.len() as u32); // file length
+                reply.add_u16(0); // creation date
+                reply.add_u16(0); // access date
+                reply.add_u16(0); // update date
+                reply.add_u16(0); // update time
+                return Ok(())
+            }
+        }
+    }
+    Err(NetWareError::NoFilesFound)
+}
+
 fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> String {
     let path = combine_dh_path(dh, sub_path);
     let volume = dh.volume.unwrap();
@@ -256,6 +296,27 @@ fn retrieve_directory_contents(path: &Path) -> Result<Vec<DosFileName>, std::io:
         }
     }
     Ok(results)
+}
+
+fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {
+    let mut last_slash_index: Option<usize> = None;
+    for index in 0..path.len() {
+        if path.data()[index] == 0x5c /* \ */ {
+            last_slash_index = Some(index);
+        }
+    }
+    last_slash_index
+}
+
+// Takes FOO/BAR/BAZ.TXT, returns ("FOO/BAR", "BAZ.TXT")
+fn split_path(path: &MaxBoundedString) -> (MaxBoundedString, MaxBoundedString) {
+    if let Some(n) = find_last_slash(path) {
+        let data = path.data();
+        let path = MaxBoundedString::from_slice(&data[0..n]);
+        let filename = MaxBoundedString::from_slice(&data[n + 1..]);
+        return (path, filename)
+    }
+    return (MaxBoundedString::empty(), *path)
 }
 
 fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> MaxBoundedString {

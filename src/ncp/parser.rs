@@ -154,6 +154,15 @@ pub struct GetDirectoryPath {
 }
 
 #[derive(NcpPacket)]
+pub struct SearchForFile {
+    #[descr="Search for a file"]
+    pub last_search_index: u16,
+    pub directory_handle: u8,
+    pub search_attr: u8,
+    pub filename: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct LockPhysicalRecordOld {
     pub lock_flag: u8,
     pub file_handle: NcpFileHandle,
@@ -198,6 +207,7 @@ pub enum Request {
     ReadFromFile(ReadFromFile),
     CloseFile(CloseFile),
     GetDirectoryPath(GetDirectoryPath),
+    SearchForFile(SearchForFile),
     LockPhysicalRecordOld(LockPhysicalRecordOld),
     ClearPhysicalRecord(ClearPhysicalRecord),
     CreateServiceConnection(CreateServiceConnection),
@@ -224,6 +234,7 @@ impl Request {
             33 => { Ok(Request::NegotiateBufferSize(NegotiateBufferSize::from(rdr)?)) },
             62 => { Ok(Request::FileSearchInit(FileSearchInit::from(rdr)?)) },
             63 => { Ok(Request::FileSearchContinue(FileSearchContinue::from(rdr)?)) },
+            64 => { Ok(Request::SearchForFile(SearchForFile::from(rdr)?)) },
             66 => { Ok(Request::CloseFile(CloseFile::from(rdr)?)) },
             72 => { Ok(Request::ReadFromFile(ReadFromFile::from(rdr)?)) },
             76 => { Ok(Request::OpenFile(OpenFile::from(rdr)?)) },

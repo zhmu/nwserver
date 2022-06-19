@@ -141,6 +141,14 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
         s
     }
 
+    pub fn from_slice(data: &[u8]) -> Self {
+        assert!(data.len() < MAX_SIZE);
+        let mut s = Self::empty();
+        s.length = data.len();
+        s.data[0..s.length].copy_from_slice(data);
+        s
+    }
+
     pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
         let length: usize = rdr.read_u8()?.into();
         if length >= MAX_SIZE { return Err(NetWareError::StringTooLong) }
