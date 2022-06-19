@@ -10,3 +10,4 @@ pub mod filesystem;
 pub mod packetburst;
 pub mod server;
 pub mod parser;
+pub mod sync;

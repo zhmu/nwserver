@@ -214,6 +214,12 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::CloseFile(args) => {
                 ncp::filesystem::process_request_66_close_file(conn, &args, &mut reply)
             },
+            ncp::parser::Request::LockPhysicalRecordOld(args) => {
+                ncp::sync::process_request_26_lock_physical_record_old(conn, &args, &mut reply)
+            },
+            ncp::parser::Request::ClearPhysicalRecord(args) => {
+                ncp::sync::process_request_30_clear_physical_record(conn, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

@@ -154,6 +154,24 @@ pub struct GetDirectoryPath {
 }
 
 #[derive(NcpPacket)]
+pub struct LockPhysicalRecordOld {
+    pub lock_flag: u8,
+    pub file_handle: NcpFileHandle,
+    pub lock_area_start_offset: u32,
+    pub lock_area_length: u32,
+    pub lock_timeout: u16,
+}
+
+#[derive(NcpPacket)]
+pub struct ClearPhysicalRecord {
+    _reserved: u8,
+    pub file_handle: NcpFileHandle,
+    pub lock_area_start_offset: u32,
+    pub lock_area_length: u32,
+}
+
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -180,6 +198,8 @@ pub enum Request {
     ReadFromFile(ReadFromFile),
     CloseFile(CloseFile),
     GetDirectoryPath(GetDirectoryPath),
+    LockPhysicalRecordOld(LockPhysicalRecordOld),
+    ClearPhysicalRecord(ClearPhysicalRecord),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -199,6 +219,8 @@ impl Request {
             20 => { Ok(Request::GetFileServerDateAndTime(GetFileServerDateAndTime::from(rdr)?)) },
             22 => { Request::from_2222_22(rdr) },
             23 => { Request::from_2222_23(rdr) },
+            26 => { Ok(Request::LockPhysicalRecordOld(LockPhysicalRecordOld::from(rdr)?)) },
+            30 => { Ok(Request::ClearPhysicalRecord(ClearPhysicalRecord::from(rdr)?)) },
             33 => { Ok(Request::NegotiateBufferSize(NegotiateBufferSize::from(rdr)?)) },
             62 => { Ok(Request::FileSearchInit(FileSearchInit::from(rdr)?)) },
             63 => { Ok(Request::FileSearchContinue(FileSearchContinue::from(rdr)?)) },
