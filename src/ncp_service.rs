@@ -223,6 +223,15 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::ClearPhysicalRecord(args) => {
                 ncp::sync::process_request_30_clear_physical_record(conn, &args, &mut reply)
             },
+            ncp::parser::Request::GetBinderyAccessLevel(args) => {
+                ncp::bindery::process_request_23_70_get_bindery_access_level(conn, &args, &mut reply)
+            },
+            ncp::parser::Request::GetBinderyObjectName(args) => {
+                ncp::bindery::process_request_23_54_get_bindery_object_name(conn, &args, &mut reply)
+            },
+            ncp::parser::Request::EndOfJob(args) => {
+                ncp::connection::process_request_24_end_of_job(conn, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

@@ -179,6 +179,25 @@ pub struct ClearPhysicalRecord {
     pub lock_area_length: u32,
 }
 
+#[derive(NcpPacket)]
+pub struct EndOfJob {
+}
+
+#[derive(NcpPacket)]
+pub struct GetBinderyAccessLevel {
+}
+
+#[derive(NcpPacket)]
+pub struct GetBinderyObjectName {
+    pub object_id: u32
+}
+
+#[derive(NcpPacket)]
+pub struct ScanBinderyObject {
+    pub last_object_seen: u32,
+    pub search_object_type: u16,
+    pub search_object_name: MaxBoundedString,
+}
 
 #[derive(NcpPacket)]
 pub struct CreateServiceConnection {
@@ -210,6 +229,9 @@ pub enum Request {
     SearchForFile(SearchForFile),
     LockPhysicalRecordOld(LockPhysicalRecordOld),
     ClearPhysicalRecord(ClearPhysicalRecord),
+    GetBinderyAccessLevel(GetBinderyAccessLevel),
+    GetBinderyObjectName(GetBinderyObjectName),
+    EndOfJob(EndOfJob),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -229,6 +251,7 @@ impl Request {
             20 => { Ok(Request::GetFileServerDateAndTime(GetFileServerDateAndTime::from(rdr)?)) },
             22 => { Request::from_2222_22(rdr) },
             23 => { Request::from_2222_23(rdr) },
+            24 => { Ok(Request::EndOfJob(EndOfJob::from(rdr)?)) },
             26 => { Ok(Request::LockPhysicalRecordOld(LockPhysicalRecordOld::from(rdr)?)) },
             30 => { Ok(Request::ClearPhysicalRecord(ClearPhysicalRecord::from(rdr)?)) },
             33 => { Ok(Request::NegotiateBufferSize(NegotiateBufferSize::from(rdr)?)) },
@@ -276,7 +299,9 @@ impl Request {
 */
         return match sub_func {
             17 => { Ok(Request::GetFileServerInfo(GetFileServerInfo::from(rdr)?)) },
+            54 => { Ok(Request::GetBinderyObjectName(GetBinderyObjectName::from(rdr)?)) },
             61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },
+            70 => { Ok(Request::GetBinderyAccessLevel(GetBinderyAccessLevel::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 23, sub_func)) },
         }
     }

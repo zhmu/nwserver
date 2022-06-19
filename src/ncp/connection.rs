@@ -27,3 +27,7 @@ pub fn process_request_33_negotiate_buffer_size(_conn: &mut connection::Connecti
 pub fn process_request_97_get_big_packet_ncp_max_packet_size(_conn: &mut connection::Connection, _args: &parser::GetBigPacketNCPMaxPacketSize, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     Err(NetWareError::UnsupportedRequest)
 }
+
+pub fn process_request_24_end_of_job(_conn: &mut connection::Connection, _args: &parser::EndOfJob, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    Ok(())
+}
