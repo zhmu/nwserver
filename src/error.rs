@@ -23,6 +23,8 @@ pub enum NetWareError {
     NoConnectionsAvailable,
     NoSuchObject,
     NoSuchProperty,
+    BadStationNumber,
+    StationNotLoggedOn,
 }
 
 impl NetWareError {
@@ -37,8 +39,9 @@ impl NetWareError {
             NetWareError::InvalidPath => 0x9c,
             NetWareError::DirectoryIoError => 0xa1,
             NetWareError::NoSuchSet => 0xec,
-            NetWareError::NoSuchProperty => 0xfb,
+            NetWareError::NoSuchProperty | NetWareError::StationNotLoggedOn => 0xfb,
             NetWareError::NoSuchObject => 0xfc,
+            NetWareError::BadStationNumber => 0xfd,
             NetWareError::NoFilesFound => 0xff,
             NetWareError::UnsupportedRequest | NetWareError::StringTooLong |
             NetWareError::RequestLengthMismatch | NetWareError::NoSuchVolume |

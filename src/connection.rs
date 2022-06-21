@@ -4,6 +4,7 @@
  * Copyright (c) 2022 Rink Springer <rink@rink.nu>
  * For conditions of distribution and use, see LICENSE file
  */
+use crate::bindery;
 use crate::consts;
 use crate::types::*;
 use crate::handle;
@@ -18,6 +19,8 @@ pub struct Connection<'a> {
     search_handle: [ handle::SearchHandle; consts::MAX_SEARCH_HANDLES ],
     next_search_handle: usize,
     file_handle: [ handle::FileHandle; consts::MAX_OPEN_FILES ],
+    pub logged_in_object_id: bindery::ObjectID,
+    pub bindery_security: bindery::Security,
 }
 
 impl<'a> Connection<'a> {
@@ -29,16 +32,45 @@ impl<'a> Connection<'a> {
         let next_search_handle = 0;
         const INIT_FILE_HANDLE: handle::FileHandle = handle::FileHandle::zero();
         let file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
-        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle }
+        let logged_in_object_id = 0;
+        let bindery_security = 0;
+        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle, logged_in_object_id, bindery_security }
+    }
+
+    pub fn is_logged_on(&self) -> bool {
+        self.logged_in_object_id != bindery::ID_NOT_LOGGED_IN
     }
 
     pub fn allocate(config: &'a config::Configuration, dest: &IpxAddr) -> Self {
         let mut c = Connection::zero();
         c.dest = *dest;
-        let dh = c.alloc_dir_handle(config, VOLUME_LOGIN);
+        c.logout(config);
+        c
+    }
+
+    pub fn logout(&mut self, config: &'a config::Configuration) {
+        self.logged_in_object_id = bindery::ID_NOT_LOGGED_IN;
+        self.bindery_security = bindery::SECURITY_NOT_LOGGED_IN;
+
+        // Reset all directory handles
+        const INIT_DIR_HANDLE: handle::DirectoryHandle = handle::DirectoryHandle::zero();
+        self.dir_handle = [ INIT_DIR_HANDLE; consts::MAX_DIR_HANDLES ];
+
+        // Reset all search handles
+        const INIT_SEARCH_HANDLE: handle::SearchHandle = handle::SearchHandle::zero();
+        self.search_handle = [ INIT_SEARCH_HANDLE; consts::MAX_SEARCH_HANDLES ];
+        self.next_search_handle = 0;
+
+        // Reset all file handles
+        const INIT_FILE_HANDLE: handle::FileHandle = handle::FileHandle::zero();
+        self.file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
+
+        // Allocate a single directory handle
+        let dh = self.alloc_dir_handle(config, VOLUME_LOGIN);
         let dh = dh.unwrap();
         assert!(dh.0 == 1); // must be first directory handle
-        c
+        // This would limit the initial connection's file view to SYS:LOGIN
+        // dh.1.path = MaxBoundedString::from_str("LOGIN");
     }
 
     pub fn in_use(&self) -> bool {

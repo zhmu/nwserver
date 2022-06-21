@@ -17,6 +17,8 @@ pub const PROPERTY_SEGMENT_LENGTH: usize = 128;
 
 pub const SERVER_NAME_LENGTH: usize = 48;
 
+pub const CONNECTION_TYPE_NCP: u8 = 2;
+
 // Limits per connection
 pub const MAX_SEARCH_HANDLES: usize = 16;
 pub const MAX_DIR_HANDLES: usize = 32;

@@ -13,6 +13,8 @@ use std::io::Read;
 use byteorder::{ByteOrder, ReadBytesExt, BigEndian};
 use pnet::packet::PrimitiveValues;
 
+pub type LeU32 = u32;
+
 #[derive(PartialEq, Eq, Clone, Copy, Default, Hash, Ord, PartialOrd)]
 pub struct IpxAddr(pub u32, pub MacAddr, pub u16);
 

@@ -238,6 +238,15 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::EndOfJob(args) => {
                 ncp::connection::process_request_24_end_of_job(conn, &args, &mut reply)
             },
+            ncp::parser::Request::Logout(args) => {
+                ncp::connection::process_request_25_logout(conn, self.config, &args, &mut reply)
+            },
+            ncp::parser::Request::GetStationLoggedInfo(args) => {
+                ncp::connection::process_request_23_28_get_station_logged_info(&mut self.clients, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::GetInternetAddress(args) => {
+                ncp::connection::process_request_23_26_get_internet_address(&mut self.clients, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

@@ -19,10 +19,14 @@ pub const TYPE_USER_GROUP: ObjectType = 0x0002;
 pub const TYPE_FILE_SERVER: ObjectType = 0x0004;
 
 pub const ID_SUPERVISOR: ObjectID = 1;
-pub const ID_BASE: ObjectID = 0x1000000;
+pub const ID_NOT_LOGGED_IN: ObjectID = 0xffffffff;
+
+const ID_BASE: ObjectID = 0x1000000;
 
 pub const FLAG_STATIC: Flag = 0x00;
 pub const FLAG_DYNAMIC: Flag = 0x01;
+
+pub const SECURITY_NOT_LOGGED_IN: Security = 0x00;
 
 type PropertyData = [ u8; consts::PROPERTY_SEGMENT_LENGTH ];
 

@@ -9,7 +9,7 @@ use crate::error::*;
 
 use std::fmt;
 use std::io::Read;
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
 
 use nwserver_macros::NcpPacket;
 
@@ -52,6 +52,10 @@ pub struct ReadPropertyValue {
     pub object_name: MaxBoundedString,
     pub segment_number: u8,
     pub property_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct Logout {
 }
 
 #[derive(NcpPacket)]
@@ -200,6 +204,16 @@ pub struct ScanBinderyObject {
 }
 
 #[derive(NcpPacket)]
+pub struct GetStationLoggedInfo {
+    pub target_connection_num: LeU32,
+}
+
+#[derive(NcpPacket)]
+pub struct GetInternetAddress {
+    pub target_connection_num: LeU32,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -212,6 +226,7 @@ pub enum Request {
     UnrecognizedRequest(u16, u8, u8),
     GetFileServerInfo(GetFileServerInfo),
     ReadPropertyValue(ReadPropertyValue),
+    Logout(Logout),
     NegotiateBufferSize(NegotiateBufferSize),
     FileSearchInit(FileSearchInit),
     FileSearchContinue(FileSearchContinue),
@@ -233,6 +248,8 @@ pub enum Request {
     GetBinderyObjectName(GetBinderyObjectName),
     ScanBinderyObject(ScanBinderyObject),
     EndOfJob(EndOfJob),
+    GetStationLoggedInfo(GetStationLoggedInfo),
+    GetInternetAddress(GetInternetAddress),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -253,6 +270,7 @@ impl Request {
             22 => { Request::from_2222_22(rdr) },
             23 => { Request::from_2222_23(rdr) },
             24 => { Ok(Request::EndOfJob(EndOfJob::from(rdr)?)) },
+            25 => { Ok(Request::Logout(Logout::from(rdr)?)) },
             26 => { Ok(Request::LockPhysicalRecordOld(LockPhysicalRecordOld::from(rdr)?)) },
             30 => { Ok(Request::ClearPhysicalRecord(ClearPhysicalRecord::from(rdr)?)) },
             33 => { Ok(Request::NegotiateBufferSize(NegotiateBufferSize::from(rdr)?)) },
@@ -300,6 +318,8 @@ impl Request {
 */
         return match sub_func {
             17 => { Ok(Request::GetFileServerInfo(GetFileServerInfo::from(rdr)?)) },
+            26 => { Ok(Request::GetInternetAddress(GetInternetAddress::from(rdr)?)) },
+            28 => { Ok(Request::GetStationLoggedInfo(GetStationLoggedInfo::from(rdr)?)) },
             54 => { Ok(Request::GetBinderyObjectName(GetBinderyObjectName::from(rdr)?)) },
             55 => { Ok(Request::ScanBinderyObject(ScanBinderyObject::from(rdr)?)) },
             61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },

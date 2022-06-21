@@ -8,6 +8,7 @@ enum Type {
     U8,
     U16,
     U32,
+    LeU32,
     MaxBoundedString,
     NcpFileHandle,
 }
@@ -33,6 +34,7 @@ fn parse_type(ty: &syn::Type) -> Option<Type> {
         "u8" => Some(Type::U8),
         "u16" => Some(Type::U16),
         "u32" => Some(Type::U32),
+        "LeU32" => Some(Type::LeU32),
         "MaxBoundedString" => Some(Type::MaxBoundedString),
         "NcpFileHandle" => Some(Type::NcpFileHandle),
         _ => { None }
@@ -44,6 +46,7 @@ fn generate_read_for_type(ty: &Type, rdr: &str) -> String {
         Type::U8 => { format!("{rdr}.read_u8()?", rdr=rdr) },
         Type::U16 => { format!("{rdr}.read_u16::<BigEndian>()?", rdr=rdr) },
         Type::U32 => { format!("{rdr}.read_u32::<BigEndian>()?", rdr=rdr) },
+        Type::LeU32 => { format!("{rdr}.read_u32::<LittleEndian>()?", rdr=rdr) },
         Type::MaxBoundedString => { format!("MaxBoundedString::from({rdr})?", rdr=rdr) },
         Type::NcpFileHandle => { format!("NcpFileHandle::from({rdr})?", rdr=rdr) },
     }

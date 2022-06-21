@@ -48,6 +48,15 @@ impl<'a> Clients<'a> {
         Err(NetWareError::ConnectionNotLoggedIn)
     }
 
+    pub fn get_connection_by_number(&mut self, connection_number: u32) -> Result<&mut Connection<'a>, NetWareError> {
+        let connection_number = connection_number as usize;
+        if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
+            let index = connection_number - 1;
+            return Ok(&mut self.client[index]);
+        }
+        Err(NetWareError::BadStationNumber)
+    }
+
 /*
     pub fn disconnect(&mut self, dest: &IpxAddr, header: &NcpHeader) -> Result<(), NetWareError> {
         let index = self.get_connection_index(dest, header)?;
