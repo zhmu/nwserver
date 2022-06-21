@@ -22,6 +22,7 @@ pub enum NetWareError {
     NoSuchVolume,
     NoConnectionsAvailable,
     NoSuchObject,
+    NoSuchProperty,
 }
 
 impl NetWareError {
@@ -36,6 +37,7 @@ impl NetWareError {
             NetWareError::InvalidPath => 0x9c,
             NetWareError::DirectoryIoError => 0xa1,
             NetWareError::NoSuchSet => 0xec,
+            NetWareError::NoSuchProperty => 0xfb,
             NetWareError::NoSuchObject => 0xfc,
             NetWareError::NoFilesFound => 0xff,
             NetWareError::UnsupportedRequest | NetWareError::StringTooLong |

@@ -48,10 +48,10 @@ pub struct GetFileServerInfo {
 #[derive(NcpPacket)]
 pub struct ReadPropertyValue {
     #[descr="Read property value"]
-    object_type: u16,
-    object_name: MaxBoundedString,
-    segment_number: u8,
-    property_name: MaxBoundedString,
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub segment_number: u8,
+    pub property_name: MaxBoundedString,
 }
 
 #[derive(NcpPacket)]
@@ -231,6 +231,7 @@ pub enum Request {
     ClearPhysicalRecord(ClearPhysicalRecord),
     GetBinderyAccessLevel(GetBinderyAccessLevel),
     GetBinderyObjectName(GetBinderyObjectName),
+    ScanBinderyObject(ScanBinderyObject),
     EndOfJob(EndOfJob),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
@@ -300,6 +301,7 @@ impl Request {
         return match sub_func {
             17 => { Ok(Request::GetFileServerInfo(GetFileServerInfo::from(rdr)?)) },
             54 => { Ok(Request::GetBinderyObjectName(GetBinderyObjectName::from(rdr)?)) },
+            55 => { Ok(Request::ScanBinderyObject(ScanBinderyObject::from(rdr)?)) },
             61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },
             70 => { Ok(Request::GetBinderyAccessLevel(GetBinderyAccessLevel::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 23, sub_func)) },

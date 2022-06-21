@@ -184,6 +184,14 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
         self.length = new_length;
 
     }
+
+    pub fn equals<const OTHER_SIZE: usize>(&self, other: BoundedString<OTHER_SIZE>) -> bool {
+        return if self.length == other.length {
+            self.data[0..self.length] == other.data[0..self.length]
+        } else {
+            false
+        }
+    }
 }
 
 impl<const MAX_SIZE: usize> fmt::Display for BoundedString<MAX_SIZE> {

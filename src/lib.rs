@@ -16,3 +16,4 @@ pub mod error;
 pub mod connection;
 pub mod handle;
 pub mod clients;
+pub mod bindery;

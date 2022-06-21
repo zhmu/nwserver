@@ -4,6 +4,7 @@
  * Copyright (c) 2022 Rink Springer <rink@rink.nu>
  * For conditions of distribution and use, see LICENSE file
  */
+use crate::bindery;
 use crate::config;
 use crate::consts;
 use crate::clients;
@@ -28,6 +29,7 @@ pub struct NcpService<'a> {
     config: &'a config::Configuration,
     tx: &'a ipx::Transmitter,
     clients: clients::Clients<'a>,
+    bindery: bindery::Bindery,
 }
 
 const NCP_REPLY_HEADER_LENGTH: usize = 8;
@@ -101,7 +103,8 @@ impl DataStreamer for NcpReplyPacket {
 impl<'a> NcpService<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
         let clients = clients::Clients::new();
-        NcpService{ config, tx, clients }
+        let bindery = bindery::Bindery::new(&config);
+        NcpService{ config, tx, clients, bindery }
     }
 
     fn send_reply(&self, dest: &IpxAddr, data: &[u8]) {
@@ -170,7 +173,7 @@ impl<'a> NcpService<'a> {
                 ncp::server::process_request_23_17_get_fileserver_info(self.config, &self.clients, &args, &mut reply)
             },
             ncp::parser::Request::ReadPropertyValue(args) => {
-                ncp::bindery::process_request_23_61_read_property_value(conn, &args, &mut reply)
+                ncp::bindery::process_request_23_61_read_property_value(conn, &mut self.bindery, &args, &mut reply)
             },
             ncp::parser::Request::NegotiateBufferSize(args) => {
                 ncp::connection::process_request_33_negotiate_buffer_size(conn, &args, &mut reply)
@@ -227,7 +230,10 @@ impl<'a> NcpService<'a> {
                 ncp::bindery::process_request_23_70_get_bindery_access_level(conn, &args, &mut reply)
             },
             ncp::parser::Request::GetBinderyObjectName(args) => {
-                ncp::bindery::process_request_23_54_get_bindery_object_name(conn, &args, &mut reply)
+                ncp::bindery::process_request_23_54_get_bindery_object_name(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::ScanBinderyObject(args) => {
+                ncp::bindery::process_request_23_55_scan_bindery_object(conn, &mut self.bindery, &args, &mut reply)
             },
             ncp::parser::Request::EndOfJob(args) => {
                 ncp::connection::process_request_24_end_of_job(conn, &args, &mut reply)

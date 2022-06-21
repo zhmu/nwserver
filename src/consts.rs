@@ -10,7 +10,10 @@ pub const IPX_SOCKET_RIP: u16 = 0x453;
 
 pub const MAX_CONNECTIONS: usize = 10;
 pub const MAX_VOLUMES: usize = 64;
-pub const VOLUME_NAME_LENGTH : usize = 16;
+pub const VOLUME_NAME_LENGTH: usize = 16;
+pub const OBJECT_NAME_LENGTH: usize = 48;
+pub const PROPERTY_NAME_LENGTH: usize = 15;
+pub const PROPERTY_SEGMENT_LENGTH: usize = 128;
 
 pub const SERVER_NAME_LENGTH: usize = 48;
 
