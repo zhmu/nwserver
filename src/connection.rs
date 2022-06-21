@@ -19,6 +19,7 @@ pub struct Connection<'a> {
     search_handle: [ handle::SearchHandle; consts::MAX_SEARCH_HANDLES ],
     next_search_handle: usize,
     file_handle: [ handle::FileHandle; consts::MAX_OPEN_FILES ],
+    pub login_key: Option<LoginKey>,
     pub logged_in_object_id: bindery::ObjectID,
     pub bindery_security: bindery::Security,
 }
@@ -34,7 +35,7 @@ impl<'a> Connection<'a> {
         let file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
         let logged_in_object_id = 0;
         let bindery_security = 0;
-        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle, logged_in_object_id, bindery_security }
+        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle, login_key: None, logged_in_object_id, bindery_security }
     }
 
     pub fn is_logged_on(&self) -> bool {
@@ -49,6 +50,7 @@ impl<'a> Connection<'a> {
     }
 
     pub fn logout(&mut self, config: &'a config::Configuration) {
+        self.login_key = None;
         self.logged_in_object_id = bindery::ID_NOT_LOGGED_IN;
         self.bindery_security = bindery::SECURITY_NOT_LOGGED_IN;
 

@@ -70,3 +70,27 @@ pub fn process_request_23_26_get_internet_address(clients: &mut clients::Clients
     Ok(())
 }
 
+pub fn process_request_23_23_get_login_key(conn: &mut connection::Connection, _args: &parser::GetLoginKey, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let login_key = LoginKey::generate();
+    login_key.to(reply);
+    conn.login_key = Some(login_key);
+    Ok(())
+}
+
+pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
+    let login_key = conn.login_key.as_ref().unwrap();
+
+    return match bindery.get_object_by_name(args.object_name, args.object_type) {
+        Some(object) => {
+            // TODO Verify the password
+            conn.logged_in_object_id = object.id;
+            // XXX hardcodes to supervisor
+            conn.bindery_security = 0x33;
+            Ok(())
+        },
+        None => {
+            Err(NetWareError::NoSuchObject)
+        }
+    }
+}

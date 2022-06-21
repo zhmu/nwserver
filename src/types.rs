@@ -7,6 +7,7 @@
 use crate::error::NetWareError;
 use pnet::util::MacAddr;
 use std::fmt;
+use rand::Rng;
 
 use std::convert::TryInto;
 use std::io::Read;
@@ -395,6 +396,50 @@ impl fmt::Display for NcpFileHandle {
 }
 
 impl fmt::Debug for NcpFileHandle {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, fmt)
+    }
+}
+
+pub struct LoginKey(pub [ u8; 8 ]);
+
+impl LoginKey {
+    pub const fn empty() -> Self {
+        Self([ 0u8; 8 ])
+    }
+
+    pub fn generate() -> Self {
+        let mut values = [ 0u8; 8 ];
+
+        let mut rng = rand::thread_rng();
+        for n in 0..8 {
+            values[n] = rng.gen::<u8>();
+        }
+        Self(values)
+    }
+
+    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let mut result = LoginKey::empty();
+        rdr.read_exact(&mut result.0)?;
+        Ok(result)
+    }
+
+    pub fn to<T: DataStreamer>(&self, out: &mut T) -> Option<()> {
+        out.add_data(&self.0);
+        Some(())
+    }
+}
+
+impl fmt::Display for LoginKey {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!( fmt, "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            self.0[0], self.0[1], self.0[2], self.0[3],
+            self.0[4], self.0[5], self.0[6], self.0[7],
+        )
+    }
+}
+
+impl fmt::Debug for LoginKey {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, fmt)
     }

@@ -4,6 +4,7 @@
  * Copyright (c) 2022 Rink Springer <rink@rink.nu>
  * For conditions of distribution and use, see LICENSE file
  */
+use crate::bindery;
 use crate::consts;
 use crate::config;
 use crate::types::*;
@@ -86,6 +87,8 @@ impl Bindery {
     pub fn new(config: &config::Configuration) -> Self {
         let mut bindery = Self{ objects: Vec::new(), next_id: ID_BASE };
         bindery.add_file_server(config.get_server_name().as_str(), config.get_server_address());
+        bindery.add_user("SUPERVISOR", Some(bindery::ID_SUPERVISOR));
+        bindery.add_user("GUEST", None);
         bindery
     }
 
@@ -122,5 +125,16 @@ impl Bindery {
         net_addr.set_data(0, &addr_buffer);
         server.properties.push(net_addr);
         self.objects.push(server);
+    }
+
+    fn add_user(&mut self, user_name: &str, user_id: Option<bindery::ObjectID>) {
+        let object_id = match user_id {
+            Some(n) => { n },
+            None => { self.generate_next_id() }
+        };
+        let mut user = Object::new(object_id, user_name, TYPE_USER, FLAG_STATIC, 0x13);
+        let password = Property::new("PASSWORD", FLAG_STATIC, 0x04);
+        user.properties.push(password);
+        self.objects.push(user);
     }
 }

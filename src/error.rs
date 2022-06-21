@@ -25,11 +25,13 @@ pub enum NetWareError {
     NoSuchProperty,
     BadStationNumber,
     StationNotLoggedOn,
+    NoKeyAvailable,
 }
 
 impl NetWareError {
     pub fn to_error_code(&self) -> u8 {
         return match self {
+            NetWareError::NoKeyAvailable => 0x96,
             NetWareError::ConnectionNotLoggedIn => 0x7d,
             NetWareError::OutOfHandles => 0x81,
             NetWareError::IoError(_) => 0x83,

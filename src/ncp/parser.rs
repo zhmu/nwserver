@@ -214,6 +214,23 @@ pub struct GetInternetAddress {
 }
 
 #[derive(NcpPacket)]
+pub struct GetLoginKey {
+}
+
+#[derive(NcpPacket)]
+pub struct KeyedObjectLogin {
+    pub key: LoginKey,
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct GetBinderyObjectID {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -250,6 +267,9 @@ pub enum Request {
     EndOfJob(EndOfJob),
     GetStationLoggedInfo(GetStationLoggedInfo),
     GetInternetAddress(GetInternetAddress),
+    GetLoginKey(GetLoginKey),
+    KeyedObjectLogin(KeyedObjectLogin),
+    GetBinderyObjectID(GetBinderyObjectID),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -318,8 +338,11 @@ impl Request {
 */
         return match sub_func {
             17 => { Ok(Request::GetFileServerInfo(GetFileServerInfo::from(rdr)?)) },
+            23 => { Ok(Request::GetLoginKey(GetLoginKey::from(rdr)?)) },
+            24 => { Ok(Request::KeyedObjectLogin(KeyedObjectLogin::from(rdr)?)) },
             26 => { Ok(Request::GetInternetAddress(GetInternetAddress::from(rdr)?)) },
             28 => { Ok(Request::GetStationLoggedInfo(GetStationLoggedInfo::from(rdr)?)) },
+            53 => { Ok(Request::GetBinderyObjectID(GetBinderyObjectID::from(rdr)?)) },
             54 => { Ok(Request::GetBinderyObjectName(GetBinderyObjectName::from(rdr)?)) },
             55 => { Ok(Request::ScanBinderyObject(ScanBinderyObject::from(rdr)?)) },
             61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },

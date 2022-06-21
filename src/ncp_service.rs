@@ -247,6 +247,15 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::GetInternetAddress(args) => {
                 ncp::connection::process_request_23_26_get_internet_address(&mut self.clients, &args, &mut reply)
             },
+            ncp::parser::Request::GetLoginKey(args) => {
+                ncp::connection::process_request_23_23_get_login_key(conn, &args, &mut reply)
+            },
+            ncp::parser::Request::KeyedObjectLogin(args) => {
+                ncp::connection::process_request_23_24_keyed_object_login(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::GetBinderyObjectID(args) => {
+                ncp::bindery::process_request_23_53_get_bindery_object_id(conn, &mut self.bindery, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

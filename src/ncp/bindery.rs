@@ -43,15 +43,16 @@ pub fn process_request_23_61_read_property_value(_conn: &mut connection::Connect
     }
 }
 
-pub fn process_request_23_70_get_bindery_access_level(_conn: &mut connection::Connection, _args: &parser::GetBinderyAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    reply.add_u8(0x00); // not logged in
-    reply.add_u32(0xffffffff); // NOT-LOGGED-IN
+pub fn process_request_23_70_get_bindery_access_level(conn: &mut connection::Connection, _args: &parser::GetBinderyAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    reply.add_u8(conn.bindery_security);
+    reply.add_u32(conn.logged_in_object_id);
     Ok(())
 }
 
 pub fn process_request_23_54_get_bindery_object_name(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectName, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     return match bindery.get_object_by_id(args.object_id) {
         Some(object) => {
+            reply.add_u32(object.id); // ObjectID
             reply.add_u16(object.typ); // ObjectType
             object.name.to_raw(reply); // ObjectName
             Ok(())
@@ -82,3 +83,20 @@ pub fn process_request_23_55_scan_bindery_object(_conn: &mut connection::Connect
     }
     Err(NetWareError::NoSuchObject)
 }
+
+pub fn process_request_23_53_get_bindery_object_id(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectID, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
+
+    return match bindery.get_object_by_name(args.object_name, args.object_type) {
+        Some(object) => {
+            reply.add_u32(object.id); // ObjectID
+            reply.add_u16(object.typ); // ObjectType
+            object.name.to_raw(reply); // ObjectName
+            Ok(())
+        },
+        None => {
+            Err(NetWareError::NoSuchObject)
+        }
+    }
+}
+
