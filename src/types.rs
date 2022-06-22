@@ -408,6 +408,10 @@ impl LoginKey {
         Self([ 0u8; 8 ])
     }
 
+    pub fn data(&self) -> &[u8; 8] {
+        &self.0
+    }
+
     pub fn generate() -> Self {
         let mut values = [ 0u8; 8 ];
 

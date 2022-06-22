@@ -26,6 +26,7 @@ pub enum NetWareError {
     BadStationNumber,
     StationNotLoggedOn,
     NoKeyAvailable,
+    InvalidPassword,
 }
 
 impl NetWareError {
@@ -40,6 +41,7 @@ impl NetWareError {
             NetWareError::NoDirectoryHandlesLeft => 0x9d,
             NetWareError::InvalidPath => 0x9c,
             NetWareError::DirectoryIoError => 0xa1,
+            NetWareError::InvalidPassword => 0xde,
             NetWareError::NoSuchSet => 0xec,
             NetWareError::NoSuchProperty | NetWareError::StationNotLoggedOn => 0xfb,
             NetWareError::NoSuchObject => 0xfc,

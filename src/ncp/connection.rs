@@ -6,6 +6,7 @@
  */
 use crate::bindery;
 use crate::connection;
+use crate::crypto;
 use crate::clients;
 use crate::config;
 use crate::consts;
@@ -13,6 +14,8 @@ use super::parser;
 use crate::error::*;
 use crate::types::*;
 use crate::ncp_service::NcpReplyPacket;
+
+use std::convert::TryInto;
 
 pub fn destroy_service_connection(conn: &mut connection::Connection, _args: &parser::DestroyServiceConnection, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     *conn = connection::Connection::zero();
@@ -83,11 +86,21 @@ pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connectio
 
     return match bindery.get_object_by_name(args.object_name, args.object_type) {
         Some(object) => {
-            // TODO Verify the password
-            conn.logged_in_object_id = object.id;
-            // XXX hardcodes to supervisor
-            conn.bindery_security = 0x33;
-            Ok(())
+            return match object.get_property_by_name(MaxBoundedString::from_str("PASSWORD")) {
+                Some(property) => {
+                    let segment = property.get_segment(0).unwrap();
+                    let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
+                    if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
+
+                    conn.logged_in_object_id = object.id;
+                    // XXX hardcodes to supervisor
+                    conn.bindery_security = 0x33;
+                    Ok(())
+                },
+                None => {
+                    Err(NetWareError::InvalidPassword)
+                }
+            }
         },
         None => {
             Err(NetWareError::NoSuchObject)

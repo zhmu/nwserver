@@ -7,6 +7,7 @@
 use crate::bindery;
 use crate::consts;
 use crate::config;
+use crate::crypto;
 use crate::types::*;
 
 pub type ObjectID = u32;
@@ -51,6 +52,14 @@ impl Property {
         let value = self.values.first_mut().unwrap();
         value[offset..offset + data.len()].copy_from_slice(&data);
     }
+
+    pub fn get_segment(&mut self, segment_nr: usize) -> Option<&mut PropertyData> {
+        return if segment_nr < self.values.len() {
+            Some(&mut self.values[segment_nr])
+        } else {
+            None
+        }
+    }
 }
 
 pub struct Object {
@@ -87,8 +96,10 @@ impl Bindery {
     pub fn new(config: &config::Configuration) -> Self {
         let mut bindery = Self{ objects: Vec::new(), next_id: ID_BASE };
         bindery.add_file_server(config.get_server_name().as_str(), config.get_server_address());
-        bindery.add_user("SUPERVISOR", Some(bindery::ID_SUPERVISOR));
-        bindery.add_user("GUEST", None);
+        let supervisor_id = bindery.add_user("SUPERVISOR", Some(bindery::ID_SUPERVISOR));
+        bindery.set_password(supervisor_id, "");
+        let guest_id = bindery.add_user("GUEST", None);
+        bindery.set_password(guest_id, "");
         bindery
     }
 
@@ -127,7 +138,22 @@ impl Bindery {
         self.objects.push(server);
     }
 
-    fn add_user(&mut self, user_name: &str, user_id: Option<bindery::ObjectID>) {
+    fn set_password(&mut self, object_id: ObjectID, password: &str) -> Option<()> {
+        let object = self.get_object_by_id(object_id);
+        if object.is_none() { return None; }
+        let object = object.unwrap();
+
+        let password_data = crypto::encrypt_bindery_password(object.id, password);
+
+        let password = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"));
+        if password.is_none() { return None; }
+        let password = password.unwrap();
+
+        password.set_data(0, &password_data);
+        Some(())
+    }
+
+    fn add_user(&mut self, user_name: &str, user_id: Option<bindery::ObjectID>) -> ObjectID {
         let object_id = match user_id {
             Some(n) => { n },
             None => { self.generate_next_id() }
@@ -136,5 +162,6 @@ impl Bindery {
         let password = Property::new("PASSWORD", FLAG_STATIC, 0x04);
         user.properties.push(password);
         self.objects.push(user);
+        object_id
     }
 }

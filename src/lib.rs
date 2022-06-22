@@ -17,3 +17,4 @@ pub mod connection;
 pub mod handle;
 pub mod clients;
 pub mod bindery;
+pub mod crypto;
