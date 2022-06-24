@@ -231,6 +231,22 @@ pub struct GetBinderyObjectID {
 }
 
 #[derive(NcpPacket)]
+pub struct KeyedVerifyPassword {
+    pub key: LoginKey,
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct KeyedChangePassword {
+    pub key: LoginKey,
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub new_password: MaxBoundedString,
+}
+
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -270,6 +286,8 @@ pub enum Request {
     GetLoginKey(GetLoginKey),
     KeyedObjectLogin(KeyedObjectLogin),
     GetBinderyObjectID(GetBinderyObjectID),
+    KeyedVerifyPassword(KeyedVerifyPassword),
+    KeyedChangePassword(KeyedChangePassword),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -347,6 +365,8 @@ impl Request {
             55 => { Ok(Request::ScanBinderyObject(ScanBinderyObject::from(rdr)?)) },
             61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },
             70 => { Ok(Request::GetBinderyAccessLevel(GetBinderyAccessLevel::from(rdr)?)) },
+            74 => { Ok(Request::KeyedVerifyPassword(KeyedVerifyPassword::from(rdr)?)) },
+            75 => { Ok(Request::KeyedChangePassword(KeyedChangePassword::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 23, sub_func)) },
         }
     }

@@ -256,6 +256,12 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::GetBinderyObjectID(args) => {
                 ncp::bindery::process_request_23_53_get_bindery_object_id(conn, &mut self.bindery, &args, &mut reply)
             },
+            ncp::parser::Request::KeyedVerifyPassword(args) => {
+                ncp::bindery::process_request_23_74_keyed_verify_password(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::KeyedChangePassword(args) => {
+                ncp::bindery::process_request_23_75_keyed_change_password(conn, &mut self.bindery, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

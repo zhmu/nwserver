@@ -180,14 +180,14 @@ fn generate_inverse_shuffle_table() -> [u8; 256 + 16] {
     table
 }
 
-pub fn decrypt(oldpwd: &[u8; 8], newpwd: &[u8; 8]) -> [ u8; 8 ] {
+pub fn decrypt(oldpwd: [u8; 8], newpwd: [u8; 8]) -> [ u8; 8 ] {
     let inv_shuffle = generate_inverse_shuffle_table();
 
     let mut old_password_shuffled = [ 0u8; 8 ];
-    old_password_shuffled.copy_from_slice(oldpwd);
+    old_password_shuffled.copy_from_slice(&oldpwd);
 
     let mut current_password = [ 0u8; 8 ];
-    current_password.copy_from_slice(newpwd);
+    current_password.copy_from_slice(&newpwd);
 
     let mut result = [ 0u8; 8 ];
     for _ in 0..16 {
@@ -257,7 +257,7 @@ mod tests {
         let data1: [ u8; 8 ] = [ 0x98, 0x32, 0x35, 0x67, 0xdd, 0x2f, 0xaa, 0x80 ];
         let data2: [ u8; 8] = [ 0xad, 0x5c, 0x42, 0x40, 0x47, 0xc4, 0x4e, 0x11 ];
         let expected: [ u8; 8 ] = [ 0x6d, 0xc9, 0xde, 0x66, 0xbd, 0x54, 0x4e, 0xc1 ];
-        let out = decrypt(&data1, &data2);
+        let out = decrypt(data1, data2);
         assert_eq!(out, expected);
     }
 }

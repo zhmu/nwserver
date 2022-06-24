@@ -47,8 +47,7 @@ impl Property {
     }
 
     pub fn set_data(&mut self, offset: usize, data: &[u8]) {
-        assert_eq!(offset, 0);
-        assert!(data.len() < consts::PROPERTY_SEGMENT_LENGTH);
+        assert!(offset + data.len() < consts::PROPERTY_SEGMENT_LENGTH);
         let value = self.values.first_mut().unwrap();
         value[offset..offset + data.len()].copy_from_slice(&data);
     }

@@ -6,10 +6,13 @@
  */
 use crate::bindery;
 use crate::connection;
+use crate::crypto;
 use crate::error::*;
 use crate::types::*;
 use super::parser;
 use crate::ncp_service::NcpReplyPacket;
+
+use std::convert::TryInto;
 
 const ANY_OBJECT_TYPE: bindery::ObjectType = 0xffff;
 const RESET_OBJECT_ID: bindery::ObjectID = 0xffffffff;
@@ -84,7 +87,7 @@ pub fn process_request_23_55_scan_bindery_object(_conn: &mut connection::Connect
     Err(NetWareError::NoSuchObject)
 }
 
-pub fn process_request_23_53_get_bindery_object_id(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectID, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_53_get_bindery_object_id(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectID, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
 
     return match bindery.get_object_by_name(args.object_name, args.object_type) {
@@ -100,3 +103,59 @@ pub fn process_request_23_53_get_bindery_object_id(_conn: &mut connection::Conne
     }
 }
 
+pub fn process_request_23_74_keyed_verify_password(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::KeyedVerifyPassword, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
+    let login_key = conn.login_key.as_ref().unwrap();
+
+    return match bindery.get_object_by_name(args.object_name, args.object_type) {
+        Some(object) => {
+            return match object.get_property_by_name(MaxBoundedString::from_str("PASSWORD")) {
+                Some(property) => {
+                    let segment = property.get_segment(0).unwrap();
+                    let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
+                    if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
+                    Ok(())
+                },
+                None => {
+                    Err(NetWareError::InvalidPassword)
+                }
+            }
+        },
+        None => {
+            Err(NetWareError::NoSuchObject)
+        }
+    }
+}
+
+pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::KeyedChangePassword, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
+    let login_key = conn.login_key.as_ref().unwrap();
+
+    return match bindery.get_object_by_name(args.object_name, args.object_type) {
+        Some(object) => {
+            return match object.get_property_by_name(MaxBoundedString::from_str("PASSWORD")) {
+                Some(property) => {
+                    let segment = property.get_segment(0).unwrap();
+                    let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
+                    if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
+
+                    if args.new_password.len() < 16 { return Err(NetWareError::InvalidPassword) }
+
+                    let new_password = args.new_password.data();
+                    let a = crypto::decrypt(segment[0..8].try_into().unwrap(), new_password[0..8].try_into().unwrap());
+                    let b = crypto::decrypt(segment[8..16].try_into().unwrap(), new_password[8..16].try_into().unwrap());
+
+                    property.set_data(0, &a);
+                    property.set_data(8, &b);
+                    Ok(())
+                },
+                None => {
+                    Err(NetWareError::InvalidPassword)
+                }
+            }
+        },
+        None => {
+            Err(NetWareError::NoSuchObject)
+        }
+    }
+}
