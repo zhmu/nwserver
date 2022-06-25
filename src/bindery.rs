@@ -95,10 +95,13 @@ impl Bindery {
     pub fn new(config: &config::Configuration) -> Self {
         let mut bindery = Self{ objects: Vec::new(), next_id: ID_BASE };
         bindery.add_file_server(config.get_server_name().as_str(), config.get_server_address());
-        let supervisor_id = bindery.add_user("SUPERVISOR", Some(bindery::ID_SUPERVISOR));
-        bindery.set_password(supervisor_id, "");
-        let guest_id = bindery.add_user("GUEST", None);
-        bindery.set_password(guest_id, "");
+
+        for user in config.get_users() {
+            let is_supervisor = user.name == "SUPERVISOR";
+            let user_id = if is_supervisor { Some(bindery::ID_SUPERVISOR) } else { None };
+            let user_id = bindery.add_user(&user.name, user_id);
+            bindery.set_password(user_id, &user.initial_password);
+        }
         bindery
     }
 

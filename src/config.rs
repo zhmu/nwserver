@@ -39,6 +39,12 @@ pub struct Volume {
     pub path: String,
 }
 
+#[derive(Debug)]
+pub struct User {
+    pub name: String,
+    pub initial_password: String,
+}
+
 pub struct Configuration {
     network_interface: String,
     // The unique server address, i.e. <internal_ipx_network>.000000000001
@@ -47,6 +53,7 @@ pub struct Configuration {
     network_address: IpxAddr,
     server_name: BoundedString<{ consts::SERVER_NAME_LENGTH }>,
     volumes: Vec<Volume>,
+    users: Vec<User>,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +109,25 @@ fn parse_volumes(config: &toml::Value) -> Result<Vec<Volume>, ConfigError> {
     }
 }
 
+fn parse_users(config: &toml::Value) -> Result<Vec<User>, ConfigError> {
+    let mut users: Vec<User> = Vec::new();
+    if let Value::Table(t) = &config["users"] {
+        for (name, value) in t {
+            let name = name.to_uppercase();
+            let mut initial_password = "";
+            if let Value::Table(t) = value {
+                if let Some(password) = t.get("initial_password") {
+                    if let Some(password) = password.as_str() {
+                        initial_password = password;
+                    }
+                }
+            }
+            users.push(User{ name, initial_password: initial_password.to_string() });
+        }
+    }
+    Ok(users)
+}
+
 impl Configuration {
     pub fn new(content: &str) -> Result<Self, ConfigError> {
         let config: TomlConfig = toml::from_str(&content)?;
@@ -113,7 +139,8 @@ impl Configuration {
 
         let config: Value = toml::from_str(&content)?;
         let volumes = parse_volumes(&config)?;
-        Ok(Self{ server_address, network_interface, network_address, server_name, volumes })
+        let users = parse_users(&config)?;
+        Ok(Self{ server_address, network_interface, network_address, server_name, volumes, users })
     }
 
     pub fn set_mac_address(&mut self, mac: &MacAddr) {
@@ -138,5 +165,9 @@ impl Configuration {
 
     pub fn get_volumes(&self) -> &Vec<Volume> {
         &self.volumes
+    }
+
+    pub fn get_users(&self) -> &Vec<User> {
+        &self.users
     }
 }

@@ -5,7 +5,10 @@ ipx_network = 0x1234
 internal_ipx_network = 0xdeadf00d
 interface = "br0"
 
-[volumes]
-    [volumes.sys]
-    path = "/nfs/rink/nwserver/sys"
+[volumes.sys]
+path = "/nfs/rink/nwserver/sys"
 
+[users.supervisor]
+initial_password = "HI"
+
+[users.guest]
