@@ -8,6 +8,7 @@ use crate::bindery;
 use crate::consts;
 use crate::config;
 use crate::crypto;
+use crate::error::*;
 use crate::types::*;
 
 pub type ObjectID = u32;
@@ -76,13 +77,13 @@ impl Object {
         Self{ id, name, typ, flag, security, properties: Vec::new() }
     }
 
-    pub fn get_property_by_name(&mut self, name: MaxBoundedString) -> Option<&mut Property> {
+    pub fn get_property_by_name(&mut self, name: MaxBoundedString) -> Result<&mut Property, NetWareError> {
         for prop in self.properties.iter_mut() {
             if prop.name.equals(name) {
-                return Some(prop)
+                return Ok(prop)
             }
         }
-        None
+        Err(NetWareError::NoSuchProperty)
     }
 }
 
@@ -100,9 +101,14 @@ impl Bindery {
             let is_supervisor = user.name == "SUPERVISOR";
             let user_id = if is_supervisor { Some(bindery::ID_SUPERVISOR) } else { None };
             let user_id = bindery.add_user(&user.name, user_id);
-            bindery.set_password(user_id, &user.initial_password);
+            bindery.set_password(user_id, &user.initial_password).expect("cannot set initial password");
         }
         bindery
+    }
+
+    fn is_supervisor(&mut self, object_id: ObjectID) -> bool {
+        // TODO Check security equivalences, etc
+        object_id == bindery::ID_SUPERVISOR
     }
 
     fn generate_next_id(&mut self) -> ObjectID {
@@ -111,22 +117,22 @@ impl Bindery {
         id
     }
 
-    pub fn get_object_by_name(&mut self, object_name: MaxBoundedString, object_type: ObjectType) -> Option<&mut Object> {
+    pub fn get_object_by_name(&mut self, object_name: MaxBoundedString, object_type: ObjectType) -> Result<&mut Object, NetWareError> {
         for object in self.objects.iter_mut() {
             if object.name.equals(object_name) && object.typ == object_type {
-                return Some(object)
+                return Ok(object)
             }
         }
-        None
+        Err(NetWareError::NoSuchObject)
     }
 
-    pub fn get_object_by_id(&mut self, object_id: ObjectID) -> Option<&mut Object> {
+    pub fn get_object_by_id(&mut self, object_id: ObjectID) -> Result<&mut Object, NetWareError> {
         for object in self.objects.iter_mut() {
             if object.id == object_id {
-                return Some(object)
+                return Ok(object)
             }
         }
-        None
+        Err(NetWareError::NoSuchObject)
     }
 
     fn add_file_server(&mut self, server_name: &str, server_addr: IpxAddr) {
@@ -140,19 +146,15 @@ impl Bindery {
         self.objects.push(server);
     }
 
-    fn set_password(&mut self, object_id: ObjectID, password: &str) -> Option<()> {
-        let object = self.get_object_by_id(object_id);
-        if object.is_none() { return None; }
-        let object = object.unwrap();
+    fn set_password(&mut self, object_id: ObjectID, password: &str) -> Result<(), NetWareError> {
+        let object = self.get_object_by_id(object_id)?;
 
         let password_data = crypto::encrypt_bindery_password(object.id, password);
 
-        let password = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"));
-        if password.is_none() { return None; }
-        let password = password.unwrap();
+        let password = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"))?;
 
         password.set_data(0, &password_data);
-        Some(())
+        Ok(())
     }
 
     fn add_user(&mut self, user_name: &str, user_id: Option<bindery::ObjectID>) -> ObjectID {

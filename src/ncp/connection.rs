@@ -49,7 +49,7 @@ pub fn process_request_23_28_get_station_logged_info(clients: &mut clients::Clie
     if !client.is_logged_on() { return Err(NetWareError::StationNotLoggedOn) }
 
     reply.add_u32(client.logged_in_object_id);
-    if let Some(object) = bindery.get_object_by_id(client.logged_in_object_id) {
+    if let Ok(object) = bindery.get_object_by_id(client.logged_in_object_id) {
         reply.add_u16(object.typ); // UserType
         object.name.to_raw(reply); // UserName
     } else {
@@ -80,30 +80,19 @@ pub fn process_request_23_23_get_login_key(conn: &mut connection::Connection, _a
     Ok(())
 }
 
-pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
     let login_key = conn.login_key.as_ref().unwrap();
 
-    return match bindery.get_object_by_name(args.object_name, args.object_type) {
-        Some(object) => {
-            return match object.get_property_by_name(MaxBoundedString::from_str("PASSWORD")) {
-                Some(property) => {
-                    let segment = property.get_segment(0).unwrap();
-                    let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
-                    if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
+    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let property = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"))?;
 
-                    conn.logged_in_object_id = object.id;
-                    // XXX hardcodes to supervisor
-                    conn.bindery_security = 0x33;
-                    Ok(())
-                },
-                None => {
-                    Err(NetWareError::InvalidPassword)
-                }
-            }
-        },
-        None => {
-            Err(NetWareError::NoSuchObject)
-        }
-    }
+    let segment = property.get_segment(0).unwrap();
+    let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
+    if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
+
+    conn.logged_in_object_id = object.id;
+    // XXX hardcodes to supervisor
+    conn.bindery_security = 0x33;
+    Ok(())
 }
