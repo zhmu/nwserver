@@ -7,7 +7,7 @@
 use crate::types::*;
 use crate::consts;
 use serde::Deserialize;
-use toml::Value;
+use std::collections::BTreeMap;
 
 use pnet::util::MacAddr;
 
@@ -39,27 +39,22 @@ pub struct Volume {
     pub path: String,
 }
 
-#[derive(Debug)]
-pub struct User {
-    pub name: String,
-    pub initial_password: String,
-}
-
 pub struct Configuration {
-    network_interface: String,
+    toml: TomlConfig,
     // The unique server address, i.e. <internal_ipx_network>.000000000001
     server_address: IpxAddr,
     // The address of the server on the network, i.e. <ipx network>.<mac addr>
     network_address: IpxAddr,
     server_name: BoundedString<{ consts::SERVER_NAME_LENGTH }>,
     volumes: Vec<Volume>,
-    users: Vec<User>,
 }
 
 #[derive(Deserialize)]
 struct TomlConfig {
     server_name: String,
     network: TomlNetwork,
+    users: BTreeMap<String, TomlUser>,
+    volumes: BTreeMap<String, TomlVolume>,
 }
 
 #[derive(Deserialize)]
@@ -67,6 +62,16 @@ struct TomlNetwork {
     ipx_network: u32,
     internal_ipx_network: u32,
     interface: String,
+}
+
+#[derive(Deserialize)]
+pub struct TomlUser {
+    pub initial_password: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TomlVolume {
+    pub path: String,
 }
 
 fn verify_and_convert_string<const MAX_LENGTH: usize>(input: &str) -> Result<BoundedString<{ MAX_LENGTH }>, ConfigError> {
@@ -86,61 +91,32 @@ fn verify_and_convert_string<const MAX_LENGTH: usize>(input: &str) -> Result<Bou
     Ok(BoundedString::from_str(input_uc.as_str()))
 }
 
-fn parse_volumes(config: &toml::Value) -> Result<Vec<Volume>, ConfigError> {
-    return if let Value::Table(t) = &config["volumes"] {
-        let mut volumes: Vec<Volume> = Vec::new();
-        for (name, value) in t {
-            let name = verify_and_convert_string(&name)?;
-            if let Value::Table(t) = value {
-                if let Some(path) = t["path"].as_str() {
-                    let number = volumes.len() as u8;
-                    volumes.push(Volume{ number, name, path: path.to_string() })
-                }
-            } else {
-                return Err(ConfigError::NoVolumeConfiguration)
-            }
-        }
-        if volumes.len() >= consts::MAX_VOLUMES {
-            return Err(ConfigError::TooManyVolumes)
-        }
-        Ok(volumes)
-    } else {
-        Err(ConfigError::NoVolumeConfiguration)
+fn process_volumes(config: &TomlConfig) -> Result<Vec<Volume>, ConfigError> {
+    let mut volumes: Vec<Volume> = Vec::new();
+    for (name, value) in &config.volumes {
+        let name = verify_and_convert_string(&name)?;
+        let number = volumes.len() as u8;
+        volumes.push(Volume{ number, name, path: value.path.to_string() })
     }
-}
-
-fn parse_users(config: &toml::Value) -> Result<Vec<User>, ConfigError> {
-    let mut users: Vec<User> = Vec::new();
-    if let Value::Table(t) = &config["users"] {
-        for (name, value) in t {
-            let name = name.to_uppercase();
-            let mut initial_password = "";
-            if let Value::Table(t) = value {
-                if let Some(password) = t.get("initial_password") {
-                    if let Some(password) = password.as_str() {
-                        initial_password = password;
-                    }
-                }
-            }
-            users.push(User{ name, initial_password: initial_password.to_string() });
-        }
+    if volumes.is_empty() {
+        return Err(ConfigError::NoVolumeConfiguration)
     }
-    Ok(users)
+    if volumes.len() >= consts::MAX_VOLUMES {
+        return Err(ConfigError::TooManyVolumes)
+    }
+    Ok(volumes)
 }
 
 impl Configuration {
     pub fn new(content: &str) -> Result<Self, ConfigError> {
-        let config: TomlConfig = toml::from_str(&content)?;
+        let toml: TomlConfig = toml::from_str(&content)?;
 
-        let network_interface = config.network.interface;
-        let server_address = IpxAddr::new(config.network.internal_ipx_network, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0);
-        let network_address = IpxAddr::new(config.network.ipx_network, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0);
-        let server_name = verify_and_convert_string(&config.server_name)?;
+        let server_address = IpxAddr::new(toml.network.internal_ipx_network, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0);
+        let network_address = IpxAddr::new(toml.network.ipx_network, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0);
+        let server_name = verify_and_convert_string(&toml.server_name)?;
 
-        let config: Value = toml::from_str(&content)?;
-        let volumes = parse_volumes(&config)?;
-        let users = parse_users(&config)?;
-        Ok(Self{ server_address, network_interface, network_address, server_name, volumes, users })
+        let volumes = process_volumes(&toml)?;
+        Ok(Self{ toml, server_address, network_address, server_name, volumes })
     }
 
     pub fn set_mac_address(&mut self, mac: &MacAddr) {
@@ -160,14 +136,14 @@ impl Configuration {
     }
 
     pub fn get_network_interface(&self) -> &str {
-        &self.network_interface
+        &self.toml.network.interface
     }
 
     pub fn get_volumes(&self) -> &Vec<Volume> {
         &self.volumes
     }
 
-    pub fn get_users(&self) -> &Vec<User> {
-        &self.users
+    pub fn get_users(&self) -> &BTreeMap<String, TomlUser> {
+        &self.toml.users
     }
 }

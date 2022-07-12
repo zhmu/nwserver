@@ -97,11 +97,13 @@ impl Bindery {
         let mut bindery = Self{ objects: Vec::new(), next_id: ID_BASE };
         bindery.add_file_server(config.get_server_name().as_str(), config.get_server_address());
 
-        for user in config.get_users() {
-            let is_supervisor = user.name == "SUPERVISOR";
+        for (name, user) in config.get_users() {
+            let name = name.to_uppercase();
+            let is_supervisor = name == "SUPERVISOR";
             let user_id = if is_supervisor { Some(bindery::ID_SUPERVISOR) } else { None };
-            let user_id = bindery.add_user(&user.name, user_id);
-            bindery.set_password(user_id, &user.initial_password).expect("cannot set initial password");
+            let user_id = bindery.add_user(&name, user_id);
+            let password = &user.initial_password.as_deref().unwrap_or("");
+            bindery.set_password(user_id, &password).expect("cannot set initial password");
         }
         bindery
     }
