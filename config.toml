@@ -12,3 +12,6 @@ path = "/nfs/rink/nwserver/sys"
 initial_password = "HI"
 
 [users.guest]
+
+[groups.everyone]
+members = [ "supervisor", "guest" ]

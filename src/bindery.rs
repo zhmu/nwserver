@@ -10,6 +10,7 @@ use crate::config;
 use crate::crypto;
 use crate::error::*;
 use crate::types::*;
+use byteorder::{ByteOrder, BigEndian};
 
 pub type ObjectID = u32;
 pub type ObjectType = u16;
@@ -21,6 +22,7 @@ pub const TYPE_USER: ObjectType = 0x0001;
 pub const TYPE_USER_GROUP: ObjectType = 0x0002;
 pub const TYPE_FILE_SERVER: ObjectType = 0x0004;
 
+pub const ID_EMPTY: ObjectID = 0;
 pub const ID_SUPERVISOR: ObjectID = 1;
 pub const ID_NOT_LOGGED_IN: ObjectID = 0xffffffff;
 
@@ -28,8 +30,16 @@ const ID_BASE: ObjectID = 0x1000000;
 
 pub const FLAG_STATIC: Flag = 0x00;
 pub const FLAG_DYNAMIC: Flag = 0x01;
+pub const FLAG_SET: Flag = 0x02;
+pub const FLAG_MASK: Flag = 0x03;
 
 pub const SECURITY_NOT_LOGGED_IN: Security = 0x00;
+
+pub const SECURITY_ANYONE: Security = 0x00;
+pub const SECURITY_LOGGED_IN: Security = 0x01;
+pub const SECURITY_OBJECT: Security = 0x02;
+pub const SECURITY_SUPERVISOR: Security = 0x03;
+pub const SECURITY_SERVER: Security = 0x04;
 
 type PropertyData = [ u8; consts::PROPERTY_SEGMENT_LENGTH ];
 
@@ -60,6 +70,47 @@ impl Property {
             None
         }
     }
+
+    pub fn add_member_to_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
+        for value in &mut self.values {
+            for offset in (0..128).step_by(4) {
+                let buf = &mut value[offset..offset + 4];
+                let value_id = BigEndian::read_u32(buf);
+                if value_id == ID_EMPTY {
+                    BigEndian::write_u32(buf, member_id);
+                    return Ok(());
+                }
+            }
+        }
+        todo!(); // need to add new property
+    }
+
+    pub fn remove_member_from_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
+        for value in &mut self.values {
+            for offset in (0..128).step_by(4) {
+                let buf = &mut value[offset..offset + 4];
+                let value_id = BigEndian::read_u32(buf);
+                if value_id == member_id {
+                    BigEndian::write_u32(buf, ID_EMPTY);
+                    return Ok(());
+                }
+            }
+        }
+        Err(NetWareError::NoSuchMember)
+    }
+
+    pub fn is_member_of_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
+        for value in &mut self.values {
+            for offset in (0..128).step_by(4) {
+                let buf = &mut value[offset..offset + 4];
+                let value_id = BigEndian::read_u32(buf);
+                if value_id == member_id {
+                    return Ok(());
+                }
+            }
+        }
+        Err(NetWareError::NoSuchMember)
+    }
 }
 
 pub struct Object {
@@ -85,6 +136,17 @@ impl Object {
         }
         Err(NetWareError::NoSuchProperty)
     }
+
+    pub fn create_property(&mut self, name: &str, flags: Flag, security: Security) -> Result<&mut Property, NetWareError> {
+        if (flags & !bindery::FLAG_MASK) != 0 {
+            return Err(NetWareError::InvalidPropertyFlags);
+        }
+
+        // TODO Verify security
+        let property = Property::new(name, flags, security);
+        self.properties.push(property);
+        Ok(self.properties.last_mut().unwrap())
+    }
 }
 
 pub struct Bindery {
@@ -97,6 +159,7 @@ impl Bindery {
         let mut bindery = Self{ objects: Vec::new(), next_id: ID_BASE };
         bindery.add_file_server(config.get_server_name().as_str(), config.get_server_address());
 
+        // Create users
         for (name, user) in config.get_users() {
             let name = name.to_uppercase();
             let is_supervisor = name == "SUPERVISOR";
@@ -104,6 +167,23 @@ impl Bindery {
             let user_id = bindery.add_user(&name, user_id);
             let password = &user.initial_password.as_deref().unwrap_or("");
             bindery.set_password(user_id, &password).expect("cannot set initial password");
+        }
+
+        // Create groups
+        for (name, group) in config.get_groups() {
+            let name = name.to_uppercase();
+            let group_id = bindery.add_group(&name);
+            for member in &group.members {
+                let member = member.to_uppercase();
+                let object_name = MaxBoundedString::from_str(&member);
+                if let Ok(user) = bindery.get_object_by_name(object_name, TYPE_USER) {
+                    let user_id = user.id;
+                    bindery.add_member_to_group(group_id, user_id).unwrap(); // XXX
+                    bindery.add_group_to_member(user_id, group_id).unwrap(); // XXX
+                } else {
+                    panic!("user '{}' not found", object_name);
+                }
+            }
         }
         bindery
     }
@@ -140,11 +220,11 @@ impl Bindery {
     fn add_file_server(&mut self, server_name: &str, server_addr: IpxAddr) {
         let object_id = self.generate_next_id();
         let mut server = Object::new(object_id, server_name, TYPE_FILE_SERVER, FLAG_DYNAMIC, 0x40);
-        let mut net_addr = Property::new("NET_ADDRESS", FLAG_DYNAMIC, 0x40);
+
+        let mut net_addr = server.create_property("NET_ADDRESS", FLAG_DYNAMIC, 0x40).expect("cannot create property");
         let mut addr_buffer = [ 0u8; 12 ];
         server_addr.to(&mut addr_buffer);
         net_addr.set_data(0, &addr_buffer);
-        server.properties.push(net_addr);
         self.objects.push(server);
     }
 
@@ -164,10 +244,35 @@ impl Bindery {
             Some(n) => { n },
             None => { self.generate_next_id() }
         };
-        let mut user = Object::new(object_id, user_name, TYPE_USER, FLAG_STATIC, 0x13);
-        let password = Property::new("PASSWORD", FLAG_STATIC, 0x04);
-        user.properties.push(password);
+        let mut user = Object::new(object_id, user_name, TYPE_USER, FLAG_STATIC, 0x31);
+        user.create_property("PASSWORD", FLAG_STATIC, 0x44).expect("cannot create property");
+        user.create_property("GROUPS_I'M_IN", FLAG_STATIC | FLAG_SET, 0x31).expect("cannot create property");
+        user.create_property("SECURITY_EQUALS", FLAG_STATIC | FLAG_SET, 0x32).expect("cannot create property");
         self.objects.push(user);
         object_id
+    }
+
+    fn add_group(&mut self, group_name: &str) -> ObjectID {
+        let object_id = self.generate_next_id();
+        let mut group = Object::new(object_id, group_name, TYPE_USER_GROUP, FLAG_STATIC, 0x31);
+        group.create_property("GROUP_MEMBERS", FLAG_STATIC | FLAG_SET, 0x31).expect("cannot create property");
+        self.objects.push(group);
+        object_id
+    }
+
+    fn add_member_to_group(&mut self, group_id: bindery::ObjectID, member_id: bindery::ObjectID) -> Result<(), NetWareError> {
+        let group = self.get_object_by_id(group_id)?;
+        let members = group.get_property_by_name(MaxBoundedString::from_str("GROUP_MEMBERS"))?;
+        members.add_member_to_set(member_id)?;
+        Ok(())
+    }
+
+    fn add_group_to_member(&mut self, member_id: bindery::ObjectID, group_id: bindery::ObjectID) -> Result<(), NetWareError> {
+        let member = self.get_object_by_id(member_id)?;
+        let groups_im_in = member.get_property_by_name(MaxBoundedString::from_str("GROUPS_I'M_IN"))?;
+        groups_im_in.add_member_to_set(group_id)?;
+        let security_equals = member.get_property_by_name(MaxBoundedString::from_str("SECURITY_EQUALS"))?;
+        security_equals.add_member_to_set(group_id)?;
+        Ok(())
     }
 }

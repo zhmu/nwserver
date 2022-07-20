@@ -54,6 +54,7 @@ struct TomlConfig {
     server_name: String,
     network: TomlNetwork,
     users: BTreeMap<String, TomlUser>,
+    groups: BTreeMap<String, TomlGroup>,
     volumes: BTreeMap<String, TomlVolume>,
 }
 
@@ -67,6 +68,11 @@ struct TomlNetwork {
 #[derive(Deserialize)]
 pub struct TomlUser {
     pub initial_password: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TomlGroup {
+    pub members: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -145,5 +151,9 @@ impl Configuration {
 
     pub fn get_users(&self) -> &BTreeMap<String, TomlUser> {
         &self.toml.users
+    }
+
+    pub fn get_groups(&self) -> &BTreeMap<String, TomlGroup> {
+        &self.toml.groups
     }
 }

@@ -27,6 +27,9 @@ pub enum NetWareError {
     StationNotLoggedOn,
     NoKeyAvailable,
     InvalidPassword,
+    NoSuchMember,
+    PropertyExists,
+    InvalidPropertyFlags,
 }
 
 impl NetWareError {
@@ -42,14 +45,16 @@ impl NetWareError {
             NetWareError::InvalidPath => 0x9c,
             NetWareError::DirectoryIoError => 0xa1,
             NetWareError::InvalidPassword => 0xde,
+            NetWareError::NoSuchMember => 0xea,
             NetWareError::NoSuchSet => 0xec,
+            NetWareError::PropertyExists => 0xed,
             NetWareError::NoSuchProperty | NetWareError::StationNotLoggedOn => 0xfb,
             NetWareError::NoSuchObject => 0xfc,
             NetWareError::BadStationNumber => 0xfd,
             NetWareError::NoFilesFound => 0xff,
             NetWareError::UnsupportedRequest | NetWareError::StringTooLong |
             NetWareError::RequestLengthMismatch | NetWareError::NoSuchVolume |
-            NetWareError::NoConnectionsAvailable => { 0xff },
+            NetWareError::NoConnectionsAvailable | NetWareError::InvalidPropertyFlags => 0xff,
         }
     }
 }
