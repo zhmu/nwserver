@@ -111,3 +111,74 @@ pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connec
     property.set_data(8, &b);
     Ok(())
 }
+
+pub fn process_request_23_66_delete_object_from_set(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::DeleteObjectFromSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
+    let member_id = member.id;
+
+    let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let members = group.get_property_by_name(args.property_name)?;
+
+    members.remove_member_from_set(member_id)?;
+    Ok(())
+}
+
+pub fn process_request_23_67_is_object_in_set(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::IsObjectInSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
+    let member_id = member.id;
+
+    let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let members = group.get_property_by_name(args.property_name)?;
+
+    members.is_member_of_set(member_id)
+}
+
+pub fn process_request_23_72_get_bindery_object_access_level(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let object = bindery.get_object_by_id(args.object_id)?;
+
+    let access_level = 0x33; // TODO
+    reply.add_u8(access_level); // ObjectAccessLevel
+    Ok(())
+}
+
+pub fn process_request_23_65_add_bindery_object_to_set(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::AddBinderyObjectToSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
+    let member_id = member.id;
+
+    let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let members = group.get_property_by_name(args.property_name)?;
+
+    members.add_member_to_set(member_id)?;
+    Ok(())
+}
+
+pub fn process_request_23_57_create_property(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateProperty, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+
+    if let Ok(_) = object.get_property_by_name(args.property_name) {
+        return Err(NetWareError::PropertyExists);
+    }
+
+    // TODO Check permissions
+    object.create_property(args.property_name.as_str(), args.property_flags, args.property_security)?;
+    Ok(())
+}
+
+pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::WritePropertyValue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
+    if args.segment_number == 0 { return Err(NetWareError::NoSuchProperty); }
+    if args.more_flag != 0 { return Err(NetWareError::UnsupportedRequest); } // TODO
+
+    let segment_number = (args.segment_number - 1) as usize;
+    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let prop = object.get_property_by_name(args.property_name)?;
+    // TODO check security
+    return if segment_number < prop.values.len() {
+        prop.values[segment_number].copy_from_slice(args.property_value.data());
+
+        // TODO: truncate
+        Ok(())
+    } else {
+        Err(NetWareError::NoSuchProperty)
+    }
+}

@@ -137,7 +137,7 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
     }
 
     pub fn from_str(string: &str) -> Self {
-        assert!(string.len() < MAX_SIZE);
+        assert!(string.len() <= MAX_SIZE);
         let mut s = Self::empty();
         s.length = string.len();
         s.data[0..s.length].copy_from_slice(string.as_bytes());
@@ -444,6 +444,41 @@ impl fmt::Display for LoginKey {
 }
 
 impl fmt::Debug for LoginKey {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, fmt)
+    }
+}
+
+pub struct PropertyValue(pub [ u8; 128 ]);
+
+impl PropertyValue {
+    pub const fn empty() -> Self {
+        Self([ 0u8; 128 ])
+    }
+
+    pub fn data(&self) -> &[u8; 128] {
+        &self.0
+    }
+
+    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let mut result = PropertyValue::empty();
+        rdr.read_exact(&mut result.0)?;
+        Ok(result)
+    }
+
+    pub fn to<T: DataStreamer>(&self, out: &mut T) -> Option<()> {
+        out.add_data(&self.0);
+        Some(())
+    }
+}
+
+impl fmt::Display for PropertyValue {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "...")
+    }
+}
+
+impl fmt::Debug for PropertyValue {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, fmt)
     }

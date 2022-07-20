@@ -12,6 +12,7 @@ enum Type {
     LoginKey,
     MaxBoundedString,
     NcpFileHandle,
+    PropertyValue,
 }
 
 struct Field {
@@ -39,6 +40,7 @@ fn parse_type(ty: &syn::Type) -> Option<Type> {
         "LoginKey" => Some(Type::LoginKey),
         "MaxBoundedString" => Some(Type::MaxBoundedString),
         "NcpFileHandle" => Some(Type::NcpFileHandle),
+        "PropertyValue" => Some(Type::PropertyValue),
         _ => { None }
     }
 }
@@ -52,6 +54,7 @@ fn generate_read_for_type(ty: &Type, rdr: &str) -> String {
         Type::LoginKey => { format!("LoginKey::from({rdr})?", rdr=rdr) },
         Type::MaxBoundedString => { format!("MaxBoundedString::from({rdr})?", rdr=rdr) },
         Type::NcpFileHandle => { format!("NcpFileHandle::from({rdr})?", rdr=rdr) },
+        Type::PropertyValue => { format!("PropertyValue::from({rdr})?", rdr=rdr) },
     }
 }
 

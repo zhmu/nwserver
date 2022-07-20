@@ -245,6 +245,56 @@ pub struct KeyedChangePassword {
     pub new_password: MaxBoundedString,
 }
 
+#[derive(NcpPacket)]
+pub struct DeleteObjectFromSet {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub property_name: MaxBoundedString,
+    pub member_type: u16,
+    pub member_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct IsObjectInSet {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub property_name: MaxBoundedString,
+    pub member_type: u16,
+    pub member_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct GetBinderyObjectAccessLevel {
+    pub object_id: u32,
+}
+
+#[derive(NcpPacket)]
+pub struct AddBinderyObjectToSet {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub property_name: MaxBoundedString,
+    pub member_type: u16,
+    pub member_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct CreateProperty {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub property_flags: u8,
+    pub property_security: u8,
+    pub property_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct WritePropertyValue {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+    pub segment_number: u8,
+    pub more_flag: u8,
+    pub property_name: MaxBoundedString,
+    pub property_value: PropertyValue,
+}
 
 #[derive(NcpPacket)]
 pub struct CreateServiceConnection {
@@ -288,6 +338,12 @@ pub enum Request {
     GetBinderyObjectID(GetBinderyObjectID),
     KeyedVerifyPassword(KeyedVerifyPassword),
     KeyedChangePassword(KeyedChangePassword),
+    DeleteObjectFromSet(DeleteObjectFromSet),
+    IsObjectInSet(IsObjectInSet),
+    GetBinderyObjectAccessLevel(GetBinderyObjectAccessLevel),
+    AddBinderyObjectToSet(AddBinderyObjectToSet),
+    CreateProperty(CreateProperty),
+    WritePropertyValue(WritePropertyValue),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -363,8 +419,14 @@ impl Request {
             53 => { Ok(Request::GetBinderyObjectID(GetBinderyObjectID::from(rdr)?)) },
             54 => { Ok(Request::GetBinderyObjectName(GetBinderyObjectName::from(rdr)?)) },
             55 => { Ok(Request::ScanBinderyObject(ScanBinderyObject::from(rdr)?)) },
+            57 => { Ok(Request::CreateProperty(CreateProperty::from(rdr)?)) },
             61 => { Ok(Request::ReadPropertyValue(ReadPropertyValue::from(rdr)?)) },
+            62 => { Ok(Request::WritePropertyValue(WritePropertyValue::from(rdr)?)) },
+            65 => { Ok(Request::AddBinderyObjectToSet(AddBinderyObjectToSet::from(rdr)?)) },
+            66 => { Ok(Request::DeleteObjectFromSet(DeleteObjectFromSet::from(rdr)?)) },
+            67 => { Ok(Request::IsObjectInSet(IsObjectInSet::from(rdr)?)) },
             70 => { Ok(Request::GetBinderyAccessLevel(GetBinderyAccessLevel::from(rdr)?)) },
+            72 => { Ok(Request::GetBinderyObjectAccessLevel(GetBinderyObjectAccessLevel::from(rdr)?)) },
             74 => { Ok(Request::KeyedVerifyPassword(KeyedVerifyPassword::from(rdr)?)) },
             75 => { Ok(Request::KeyedChangePassword(KeyedChangePassword::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 23, sub_func)) },

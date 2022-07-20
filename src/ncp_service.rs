@@ -262,6 +262,24 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::KeyedChangePassword(args) => {
                 ncp::bindery::process_request_23_75_keyed_change_password(conn, &mut self.bindery, &args, &mut reply)
             },
+            ncp::parser::Request::DeleteObjectFromSet(args) => {
+                ncp::bindery::process_request_23_66_delete_object_from_set(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::IsObjectInSet(args) => {
+                ncp::bindery::process_request_23_67_is_object_in_set(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::GetBinderyObjectAccessLevel(args) => {
+                ncp::bindery::process_request_23_72_get_bindery_object_access_level(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::AddBinderyObjectToSet(args) => {
+                ncp::bindery::process_request_23_65_add_bindery_object_to_set(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::CreateProperty(args) => {
+                ncp::bindery::process_request_23_57_create_property(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::WritePropertyValue(args) => {
+                ncp::bindery::process_request_23_62_write_property_value(conn, &mut self.bindery, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }
