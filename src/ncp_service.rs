@@ -104,7 +104,19 @@ impl<'a> NcpService<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
         let clients = clients::Clients::new();
         let mut bindery = bindery::Bindery::new(&config);
-        bindery.create_users_and_groups(config);
+        let mut initialise_bindery = false;
+        if let Some(path) = config.get_bindery_file() {
+            if let Err(_) = bindery.load(path) {
+                error!("unable to load bindery from {}", path);
+                initialise_bindery = true;
+            }
+        } else {
+            initialise_bindery = true;
+        }
+        if initialise_bindery {
+            info!("initialising bindery users and groups");
+            bindery.create_users_and_groups(config).expect("unable to create bindery users/groups");
+        }
         NcpService{ config, tx, clients, bindery }
     }
 

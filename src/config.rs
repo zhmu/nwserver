@@ -52,6 +52,7 @@ pub struct Configuration {
 #[derive(Deserialize)]
 struct TomlConfig {
     server_name: String,
+    bindery_file: Option<String>,
     network: TomlNetwork,
     users: BTreeMap<String, TomlUser>,
     groups: BTreeMap<String, TomlGroup>,
@@ -155,5 +156,9 @@ impl Configuration {
 
     pub fn get_groups(&self) -> &BTreeMap<String, TomlGroup> {
         &self.toml.groups
+    }
+
+    pub fn get_bindery_file(&self) -> &Option<String> {
+        &self.toml.bindery_file
     }
 }
