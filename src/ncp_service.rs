@@ -103,7 +103,8 @@ impl DataStreamer for NcpReplyPacket {
 impl<'a> NcpService<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
         let clients = clients::Clients::new();
-        let bindery = bindery::Bindery::new(&config);
+        let mut bindery = bindery::Bindery::new(&config);
+        bindery.create_users_and_groups(config);
         NcpService{ config, tx, clients, bindery }
     }
 
