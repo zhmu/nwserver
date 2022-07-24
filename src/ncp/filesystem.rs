@@ -48,17 +48,6 @@ struct NetWarePath {
     local_path: String,
 }
 
-fn find_volume_by_name<'a>(config: &'a config::Configuration, vol_name: &str) -> Result<&'a config::Volume, NetWareError> {
-    let vol_name = MaxBoundedString::from_str(vol_name);
-    for vol in config.get_volumes() {
-        if vol.name.equals(vol_name) {
-            return Ok(vol)
-        }
-    }
-    Err(NetWareError::NoSuchVolume)
-}
-
-
 impl NetWarePath {
     pub fn new(conn: &connection::Connection, config: &config::Configuration, dh: u8, path: &MaxBoundedString) -> Result<Self, NetWareError> {
         let volume;
@@ -71,7 +60,7 @@ impl NetWarePath {
             if colon.is_none() { return Err(NetWareError::NoSuchVolume); }
             let colon = colon.unwrap();
 
-            volume = find_volume_by_name(config, &path[0..colon])?;
+            volume = config.get_volumes().get_volume_by_name(&path[0..colon])?;
             volume_path = path[colon + 1..].to_string();
             local_path = combine_paths(&volume.path, &volume_path, "");
         } else {

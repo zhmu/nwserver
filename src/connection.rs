@@ -11,8 +11,6 @@ use crate::handle;
 use crate::error::NetWareError;
 use crate::config;
 
-const VOLUME_LOGIN: usize = 0;
-
 pub struct Connection<'a> {
     pub dest: IpxAddr,
     dir_handle: [ handle::DirectoryHandle<'a>; consts::MAX_DIR_HANDLES ],
@@ -68,11 +66,10 @@ impl<'a> Connection<'a> {
         self.file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
 
         // Allocate a single directory handle
-        let dh = self.alloc_dir_handle(config, VOLUME_LOGIN);
+        let dh = self.alloc_dir_handle(config, config.get_login_volume() as usize);
         let dh = dh.unwrap();
         assert!(dh.0 == 1); // must be first directory handle
-        // This would limit the initial connection's file view to SYS:LOGIN
-        // dh.1.path = MaxBoundedString::from_str("LOGIN");
+        dh.1.path = MaxBoundedString::from_str(config.get_login_root());
     }
 
     pub fn in_use(&self) -> bool {
@@ -84,7 +81,7 @@ impl<'a> Connection<'a> {
             if !dh.is_available() { continue; }
 
             *dh = handle::DirectoryHandle::zero();
-            let volume = &config.get_volumes()[volume_index];
+            let volume = config.get_volumes().get_volume_by_number(volume_index)?;
             dh.volume = Some(volume);
             return Ok(((n + 1) as u8, dh))
         }

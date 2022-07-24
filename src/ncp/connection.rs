@@ -80,7 +80,10 @@ pub fn process_request_23_23_get_login_key(conn: &mut connection::Connection, _a
     Ok(())
 }
 
-pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_24_keyed_object_login<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    // TODO: This error isn't the correct one
+    if !config.is_login_allowed() { return Err(NetWareError::ServerLoginLocked); }
+
     if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
     let login_key = conn.login_key.as_ref().unwrap();
 

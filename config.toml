@@ -1,6 +1,11 @@
 server_name = "BUCKET"
 bindery_file = "bindery.toml"
 
+[login]
+allowed = true
+# mapped path when not logged in; can't access anything outside this path
+visitor_root = "SYS:LOGIN"
+
 [network]
 ipx_network = 0x1234
 internal_ipx_network = 0xdeadf00d

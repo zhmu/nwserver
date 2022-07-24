@@ -267,7 +267,7 @@ impl<'a> NcpService<'a> {
                 ncp::connection::process_request_23_23_get_login_key(conn, &args, &mut reply)
             },
             ncp::parser::Request::KeyedObjectLogin(args) => {
-                ncp::connection::process_request_23_24_keyed_object_login(conn, &mut self.bindery, &args, &mut reply)
+                ncp::connection::process_request_23_24_keyed_object_login(conn, &self.config, &mut self.bindery, &args, &mut reply)
             },
             ncp::parser::Request::GetBinderyObjectID(args) => {
                 ncp::bindery::process_request_23_53_get_bindery_object_id(conn, &mut self.bindery, &args, &mut reply)

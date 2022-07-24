@@ -32,6 +32,7 @@ pub enum NetWareError {
     InvalidPropertyFlags,
     NoCreatePrivileges,
     NoDeletePrivileges,
+    ServerLoginLocked,
 }
 
 impl NetWareError {
@@ -48,6 +49,7 @@ impl NetWareError {
             NetWareError::NoDirectoryHandlesLeft => 0x9d,
             NetWareError::InvalidPath => 0x9c,
             NetWareError::DirectoryIoError => 0xa1,
+            NetWareError::ServerLoginLocked => 0xc5,
             NetWareError::InvalidPassword => 0xde,
             NetWareError::NoSuchMember => 0xea,
             NetWareError::NoSuchSet => 0xec,
