@@ -29,27 +29,21 @@ const _ATTR_ARCHIVE: u8 = 0x20;
 const _ATTR_EXECUTE_CONFIRM: u8 = 0x40;
 const _ATTR_SHAREABLE: u8 = 0x80;
 
-fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> MaxBoundedString {
-    let mut path = dh.path.clone();
-    if !sub_path.is_empty() {
-        path.append_str("/");
-        path.append(&sub_path);
-    }
-    path
-}
+fn combine_paths(dir1: &str, dir2: &str, dir3: &str) -> String {
+    let mut result = String::new();
+    for d in &[ dir1, dir2, dir3 ] {
+        let d = d.trim_start_matches(|c: char| { c == '\\' } );
 
-fn create_local_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> String {
-    let path = combine_dh_path(dh, sub_path);
-    let volume = dh.volume.unwrap();
-    if !path.is_empty() {
-        let path = format!("{}/{}", volume.path, path);
-        return str::replace(&path, "\\", "/")
+        if d.is_empty() { continue; }
+        if !result.is_empty() { result.push_str("/"); }
+        result.push_str(d);
     }
-    volume.path.as_str().to_string()
+    result.replace("\\", "/")
 }
 
 struct NetWarePath {
     volume: u8,
+    writeable: bool,
     volume_path: String,
     local_path: String,
 }
@@ -67,37 +61,27 @@ fn find_volume_by_name<'a>(config: &'a config::Configuration, vol_name: &str) ->
 
 impl NetWarePath {
     pub fn new(conn: &connection::Connection, config: &config::Configuration, dh: u8, path: &MaxBoundedString) -> Result<Self, NetWareError> {
+        let volume;
+        let local_path;
+        let volume_path;
         if dh == 0 {
             // No directory handle supplied; this means we need to seperate path into VOL:PATH
             let path = path.as_str();
             let colon = path.find(':');
             if colon.is_none() { return Err(NetWareError::NoSuchVolume); }
             let colon = colon.unwrap();
-            let vol_name = &path[0..colon];
 
-            let volume_path = path[colon + 1..].to_string();
-            let volume_path = volume_path.trim_start_matches(|c: char| { c == '\\' } );
-
-            let volume = find_volume_by_name(config, vol_name)?;
-
-            let local_path;
-            if !volume_path.is_empty() {
-                local_path = format!("{}/{}", volume.path, volume_path);
-            } else {
-                local_path = format!("{}", volume.path);
-            }
-
-            let result = NetWarePath{ volume: volume.number, volume_path: volume_path.to_string(), local_path };
-            return Ok(result)
+            volume = find_volume_by_name(config, &path[0..colon])?;
+            volume_path = path[colon + 1..].to_string();
+            local_path = combine_paths(&volume.path, &volume_path, "");
+        } else {
+            // Base the path on the supplied directory handle
+            let dh = conn.get_dir_handle(dh)?;
+            volume = dh.volume.unwrap();
+            volume_path = path.to_string();
+            local_path = combine_paths(&volume.path, dh.path.as_str(), &volume_path);
         }
-
-        let dh = conn.get_dir_handle(dh)?;
-        let local_path = create_local_path(dh, &path);
-        let volume = dh.volume.unwrap().number;
-
-        let volume_path = path.to_string();
-        let result = NetWarePath{ volume, volume_path, local_path };
-        Ok(result)
+        Ok(NetWarePath{ volume: volume.number, volume_path, local_path, writeable: volume.writeable })
     }
 
     // Yields the index of the volume, i.e. 0 for SYS
@@ -117,6 +101,10 @@ impl NetWarePath {
 
     pub fn get_access_rights(&self) -> u8 {
         0xff // TODO
+    }
+
+    pub fn is_writeable(&self) -> bool {
+        self.writeable
     }
 }
 
@@ -353,6 +341,30 @@ pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection,
         }
     }
     Err(NetWareError::NoFilesFound)
+}
+
+pub fn process_request_22_10_create_directory<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::CreateDirectory, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.path)?;
+    if !nw_path.is_writeable() {
+        return Err(NetWareError::NoCreatePrivileges)
+    }
+
+    return match std::fs::create_dir(nw_path.get_local_path()) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(NetWareError::DirectoryIoError),
+    }
+}
+
+pub fn process_request_22_11_delete_directory<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::DeleteDirectory, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.path)?;
+    if !nw_path.is_writeable() {
+        return Err(NetWareError::NoDeletePrivileges)
+    }
+
+    return match std::fs::remove_dir(nw_path.get_local_path()) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(NetWareError::DirectoryIoError),
+    }
 }
 
 fn retrieve_directory_contents(path: &String) -> Result<Vec<DosFileName>, std::io::Error> {

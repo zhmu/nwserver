@@ -7,7 +7,8 @@ internal_ipx_network = 0xdeadf00d
 interface = "br0"
 
 [volumes.sys]
-path = "/nfs/rink/nwserver/sys"
+path = "/opt/nwserver/SYS"
+writeable = true
 
 [users.supervisor]
 initial_password = "HI"

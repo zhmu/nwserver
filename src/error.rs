@@ -30,6 +30,8 @@ pub enum NetWareError {
     NoSuchMember,
     PropertyExists,
     InvalidPropertyFlags,
+    NoCreatePrivileges,
+    NoDeletePrivileges,
 }
 
 impl NetWareError {
@@ -39,7 +41,9 @@ impl NetWareError {
             NetWareError::ConnectionNotLoggedIn => 0x7d,
             NetWareError::OutOfHandles => 0x81,
             NetWareError::IoError(_) => 0x83,
+            NetWareError::NoCreatePrivileges => 0x84,
             NetWareError::InvalidFileHandle => 0x88,
+            NetWareError::NoDeletePrivileges => 0x8a,
             NetWareError::BadDirectoryHandle => 0x9b,
             NetWareError::NoDirectoryHandlesLeft => 0x9d,
             NetWareError::InvalidPath => 0x9c,

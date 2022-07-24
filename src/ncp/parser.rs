@@ -318,6 +318,20 @@ pub struct DeleteBinderyObject {
 }
 
 #[derive(NcpPacket)]
+pub struct CreateDirectory {
+    pub directory_handle: u8,
+    pub access_mask: u8,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct DeleteDirectory {
+    pub directory_handle: u8,
+    pub access_mask: u8,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -368,6 +382,8 @@ pub enum Request {
     WritePropertyValue(WritePropertyValue),
     CreateBinderyObject(CreateBinderyObject),
     DeleteBinderyObject(DeleteBinderyObject),
+    CreateDirectory(CreateDirectory),
+    DeleteDirectory(DeleteDirectory),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -417,6 +433,8 @@ impl Request {
         return match sub_func {
             1 => { Ok(Request::GetDirectoryPath(GetDirectoryPath::from(rdr)?)) },
             3 => { Ok(Request::GetEffectiveDirectoryRights(GetEffectiveDirectoryRights::from(rdr)?)) },
+            10 => { Ok(Request::CreateDirectory(CreateDirectory::from(rdr)?)) },
+            11 => { Ok(Request::DeleteDirectory(DeleteDirectory::from(rdr)?)) },
             18 => { Ok(Request::AllocatePermanentDirectoryHandle(AllocatePermanentDirectoryHandle::from(rdr)?)) },
             19 => { Ok(Request::AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle::from(rdr)?)) },
             20 => { Ok(Request::DeallocateDirectoryHandle(DeallocateDirectoryHandle::from(rdr)?)) },

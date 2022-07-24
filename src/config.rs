@@ -37,6 +37,7 @@ pub struct Volume {
     pub number: u8,
     pub name: BoundedString< { consts::VOLUME_NAME_LENGTH }>,
     pub path: String,
+    pub writeable: bool,
 }
 
 pub struct Configuration {
@@ -79,6 +80,7 @@ pub struct TomlGroup {
 #[derive(Deserialize)]
 pub struct TomlVolume {
     pub path: String,
+    pub writeable: bool,
 }
 
 fn verify_and_convert_string<const MAX_LENGTH: usize>(input: &str) -> Result<BoundedString<{ MAX_LENGTH }>, ConfigError> {
@@ -103,7 +105,7 @@ fn process_volumes(config: &TomlConfig) -> Result<Vec<Volume>, ConfigError> {
     for (name, value) in &config.volumes {
         let name = verify_and_convert_string(&name)?;
         let number = volumes.len() as u8;
-        volumes.push(Volume{ number, name, path: value.path.to_string() })
+        volumes.push(Volume{ number, name, path: value.path.to_string(), writeable: value.writeable })
     }
     if volumes.is_empty() {
         return Err(ConfigError::NoVolumeConfiguration)

@@ -302,6 +302,12 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::DeleteBinderyObject(args) => {
                 ncp::bindery::process_request_23_51_delete_bindery_object(conn, &mut self.bindery, &args, &mut reply)
             },
+            ncp::parser::Request::CreateDirectory(args) => {
+                ncp::filesystem::process_request_22_10_create_directory(conn, self.config, &args, &mut reply)
+            },
+            ncp::parser::Request::DeleteDirectory(args) => {
+                ncp::filesystem::process_request_22_11_delete_directory(conn, self.config, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }
