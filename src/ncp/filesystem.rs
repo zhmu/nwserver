@@ -29,22 +29,109 @@ const _ATTR_ARCHIVE: u8 = 0x20;
 const _ATTR_EXECUTE_CONFIRM: u8 = 0x40;
 const _ATTR_SHAREABLE: u8 = 0x80;
 
+fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> MaxBoundedString {
+    let mut path = dh.path.clone();
+    if !sub_path.is_empty() {
+        path.append_str("/");
+        path.append(&sub_path);
+    }
+    path
+}
 
-pub fn process_request_62_file_search_init(conn: &mut connection::Connection, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let source_dh = conn.get_dir_handle(args.handle)?;
-    let path = create_system_path(source_dh, &args.path);
-    let volume_nr = source_dh.volume.as_ref().unwrap().number;
-    let contents = retrieve_directory_contents(Path::new(&path))?;
+fn create_local_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> String {
+    let path = combine_dh_path(dh, sub_path);
+    let volume = dh.volume.unwrap();
+    if !path.is_empty() {
+        let path = format!("{}/{}", volume.path, path);
+        return str::replace(&path, "\\", "/")
+    }
+    volume.path.as_str().to_string()
+}
+
+struct NetWarePath {
+    volume: u8,
+    volume_path: String,
+    local_path: String,
+}
+
+fn find_volume_by_name<'a>(config: &'a config::Configuration, vol_name: &str) -> Result<&'a config::Volume, NetWareError> {
+    let vol_name = MaxBoundedString::from_str(vol_name);
+    for vol in config.get_volumes() {
+        if vol.name.equals(vol_name) {
+            return Ok(vol)
+        }
+    }
+    Err(NetWareError::NoSuchVolume)
+}
+
+
+impl NetWarePath {
+    pub fn new(conn: &connection::Connection, config: &config::Configuration, dh: u8, path: &MaxBoundedString) -> Result<Self, NetWareError> {
+        if dh == 0 {
+            // No directory handle supplied; this means we need to seperate path into VOL:PATH
+            let path = path.as_str();
+            let colon = path.find(':');
+            if colon.is_none() { return Err(NetWareError::NoSuchVolume); }
+            let colon = colon.unwrap();
+            let vol_name = &path[0..colon];
+
+            let volume_path = path[colon + 1..].to_string();
+            let volume_path = volume_path.trim_start_matches(|c: char| { c == '\\' } );
+
+            let volume = find_volume_by_name(config, vol_name)?;
+
+            let local_path;
+            if !volume_path.is_empty() {
+                local_path = format!("{}/{}", volume.path, volume_path);
+            } else {
+                local_path = format!("{}", volume.path);
+            }
+
+            let result = NetWarePath{ volume: volume.number, volume_path: volume_path.to_string(), local_path };
+            return Ok(result)
+        }
+
+        let dh = conn.get_dir_handle(dh)?;
+        let local_path = create_local_path(dh, &path);
+        let volume = dh.volume.unwrap().number;
+
+        let volume_path = path.to_string();
+        let result = NetWarePath{ volume, volume_path, local_path };
+        Ok(result)
+    }
+
+    // Yields the index of the volume, i.e. 0 for SYS
+    pub fn get_volume_index(&self) -> u8 {
+        self.volume
+    }
+
+    // Yields the path on the local filesystem, i.e. /opt/nwserver/vol/sys/LOGIN/LOGIN.EXE
+    pub fn get_local_path(&self) -> &String {
+        &self.local_path
+    }
+
+    // Yields the path on the volume, i.e. LOGIN/LOGIN.EXE
+    pub fn get_volume_path(&self) -> &String {
+        &self.volume_path
+    }
+
+    pub fn get_access_rights(&self) -> u8 {
+        0xff // TODO
+    }
+}
+
+pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.handle, &args.path)?;
+    let contents = retrieve_directory_contents(nw_path.get_local_path())?;
 
     // XXX verify existance, access etc
-    let sh = conn.allocate_search_handle(path, contents);
-    reply.add_u8(volume_nr);
+    let sh = conn.allocate_search_handle(nw_path.get_local_path(), contents);
+    reply.add_u8(nw_path.get_volume_index());
     let directory_id = sh.id;
     reply.add_u16(directory_id);
     let search_sequence_number = 0xffff;
     reply.add_u16(search_sequence_number);
-    let dir_access_rights = 0xff;
-    reply.add_u8(dir_access_rights);
+    reply.add_u8(nw_path.get_access_rights());
     Ok(())
 }
 
@@ -102,15 +189,13 @@ pub fn process_request_63_file_search_continue(conn: &mut connection::Connection
     Err(NetWareError::NoFilesFound)
 }
 
-pub fn process_request_22_3_get_effective_directory_rights(conn: &mut connection::Connection, args: &parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let dh = conn.get_dir_handle(args.directory_handle)?;
-    let path = create_system_path(dh, &args.directory_path);
-    let md = std::fs::metadata(&path)?;
-    if !md.file_type().is_dir() {
+pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.directory_path)?;
+    let md = std::fs::metadata(nw_path.get_local_path());
+    if md.is_err() || !md.unwrap().file_type().is_dir() {
         return Err(NetWareError::InvalidPath);
     }
-    let effective_rights_mask = 0xffff;
-    reply.add_u16(effective_rights_mask);
+    reply.add_u8(nw_path.get_access_rights());
     Ok(())
 }
 
@@ -141,29 +226,43 @@ pub fn process_request_22_20_deallocate_dir_handle(conn: &mut connection::Connec
 }
 
 pub fn process_request_22_19_allocate_temp_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let source_dh = conn.get_dir_handle(args.source_directory_handle)?;
-
-    // Create the new handle as-is
-    let volume_number = source_dh.volume.unwrap().number as usize;
-    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, volume_number)?;
-    new_dh.path = args.directory_path;
-
-    // Verify whether the path exists
-    let path = create_system_path(new_dh, &MaxBoundedString::empty());
-    let md = std::fs::metadata(&path);
+    // Construct destination path and ensure it exists
+    let nw_path = NetWarePath::new(conn, config, args.source_directory_handle, &args.directory_path)?;
+    let md = std::fs::metadata(&nw_path.get_local_path());
     if md.is_err() || !md.unwrap().is_dir() {
-        *new_dh = handle::DirectoryHandle::zero();
         return Err(NetWareError::InvalidPath);
     }
 
+    // Create the new handle
+    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, nw_path.get_volume_index() as usize)?;
+    new_dh.path = MaxBoundedString::from_str(nw_path.get_volume_path());
+
     reply.add_u8(new_dh_index);
-    let access_rights_mask = 0xff; // TODO
-    reply.add_u8(access_rights_mask);
+    reply.add_u8(nw_path.get_access_rights());
+    Ok(())
+}
+
+pub fn process_request_22_18_allocate_perm_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::AllocatePermanentDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    // TODO check is handle_name exists and overwrite it if needed?
+
+    // Construct destination path and ensure it exists
+    let nw_path = NetWarePath::new(conn, config, args.source_directory_handle, &args.directory_path)?;
+    let md = std::fs::metadata(&nw_path.get_local_path());
+    if md.is_err() || !md.unwrap().is_dir() {
+        return Err(NetWareError::InvalidPath);
+    }
+
+    // Create the new handle
+    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, nw_path.get_volume_index() as usize)?;
+    new_dh.path = MaxBoundedString::from_str(nw_path.get_volume_path());
+
+    reply.add_u8(new_dh_index);
+    reply.add_u8(nw_path.get_access_rights());
     Ok(())
 }
 
 pub fn process_request_22_1_get_directory_path<'a>(conn: &mut connection::Connection<'a>, args: &parser::GetDirectoryPath, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let dh = conn.get_mut_dir_handle(args.directory_handle)?;
+    let dh = conn.get_dir_handle(args.directory_handle)?;
     // TODO does dh.path contain the proper seperators ?
     let volume = dh.volume.unwrap();
     let length = volume.name.len() + 1 + dh.path.len();
@@ -174,12 +273,11 @@ pub fn process_request_22_1_get_directory_path<'a>(conn: &mut connection::Connec
     Ok(())
 }
 
-pub fn process_request_76_open_file(conn: &mut connection::Connection, args: &parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let dh = conn.get_dir_handle(args.directory_handle)?;
-    let path = create_system_path(dh, &args.filename);
+pub fn process_request_76_open_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.filename)?;
 
-    let filename = extract_filename_from(&path)?;
-    if let Ok(f) = File::open(&path) {
+    let filename = extract_filename_from(nw_path.get_local_path())?;
+    if let Ok(f) = File::open(nw_path.get_local_path()) {
         let md = f.metadata()?;
         let (fh_index, _) = conn.allocate_file_handle(f)?;
         let ncp_fh = NcpFileHandle::new(fh_index);
@@ -220,14 +318,11 @@ pub fn process_request_66_close_file(conn: &mut connection::Connection, args: &p
     Ok(())
 }
 
-pub fn process_request_64_search_for_file(conn: &mut connection::Connection, args: &parser::SearchForFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let source_dh = conn.get_dir_handle(args.directory_handle)?;
-
-    // Split the filename in a path / filename part
+pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::SearchForFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let (path, filename) = split_path(&args.filename);
-
-    let path = create_system_path(source_dh, &path);
-    let entries = retrieve_directory_contents(Path::new(&path))?;
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &path)?;
+    println!("sff '{}' '{}'", nw_path.get_local_path(), nw_path.get_volume_path());
+    let entries = retrieve_directory_contents(nw_path.get_local_path())?;
 
     let mut index = args.last_search_index as usize;
     if index == 0xffff { index = 0; }
@@ -260,37 +355,29 @@ pub fn process_request_64_search_for_file(conn: &mut connection::Connection, arg
     Err(NetWareError::NoFilesFound)
 }
 
-fn create_system_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> String {
-    let path = combine_dh_path(dh, sub_path);
-    let volume = dh.volume.unwrap();
-    if !path.is_empty() {
-        let path = format!("{}/{}", volume.path, path);
-        return str::replace(&path, "\\", "/")
-    }
-    volume.path.as_str().to_string()
-}
-
-fn retrieve_directory_contents(path: &Path) -> Result<Vec<DosFileName>, std::io::Error> {
+fn retrieve_directory_contents(path: &String) -> Result<Vec<DosFileName>, std::io::Error> {
+    let path = Path::new(path);
     let mut results: Vec<DosFileName> = Vec::new();
 
-    let md = std::fs::metadata(path)?;
-    if md.is_dir() {
-        let entries = std::fs::read_dir(path)?;
-        for entry in entries {
-            if let Ok(item) = entry {
-                let f = item.file_name();
-                if let Some(file_name) = f.to_str() {
-                    if let Some(file_name) = DosFileName::from_str(file_name) {
-                        results.push(file_name.clone());
+    if let Ok(md) = std::fs::metadata(path) {
+        if md.is_dir() {
+            let entries = std::fs::read_dir(path)?;
+            for entry in entries {
+                if let Ok(item) = entry {
+                    let f = item.file_name();
+                    if let Some(file_name) = f.to_str() {
+                        if let Some(file_name) = DosFileName::from_str(file_name) {
+                            results.push(file_name.clone());
+                        }
                     }
                 }
             }
-        }
-    } else if md.is_file() {
-        if let Some(file_name) = path.file_name() {
-            if let Some(file_name) = file_name.to_str() {
-                if let Some(file_name) = DosFileName::from_str(file_name) {
-                    results.push(file_name);
+        } else if md.is_file() {
+            if let Some(file_name) = path.file_name() {
+                if let Some(file_name) = file_name.to_str() {
+                    if let Some(file_name) = DosFileName::from_str(file_name) {
+                        results.push(file_name);
+                    }
                 }
             }
         }
@@ -317,15 +404,6 @@ fn split_path(path: &MaxBoundedString) -> (MaxBoundedString, MaxBoundedString) {
         return (path, filename)
     }
     return (MaxBoundedString::empty(), *path)
-}
-
-fn combine_dh_path(dh: &handle::DirectoryHandle, sub_path: &MaxBoundedString) -> MaxBoundedString {
-    let mut path = dh.path.clone();
-    if !sub_path.is_empty() {
-        path.append_str("/");
-        path.append(&sub_path);
-    }
-    path
 }
 
 fn extract_filename_from(path: &str) -> Result<DosFileName, NetWareError> {

@@ -192,7 +192,7 @@ impl<'a> NcpService<'a> {
                 ncp::connection::process_request_33_negotiate_buffer_size(conn, &args, &mut reply)
             },
             ncp::parser::Request::FileSearchInit(args) => {
-                ncp::filesystem::process_request_62_file_search_init(conn, &args, &mut reply)
+                ncp::filesystem::process_request_62_file_search_init(conn, self.config, &args, &mut reply)
             },
             ncp::parser::Request::FileSearchContinue(args) => {
                 ncp::filesystem::process_request_63_file_search_continue(conn, &args, &mut reply)
@@ -207,7 +207,7 @@ impl<'a> NcpService<'a> {
                 ncp::server::process_request_20_get_fileserver_date_and_time(conn, &args, &mut reply)
             },
             ncp::parser::Request::GetEffectiveDirectoryRights(args) => {
-                ncp::filesystem::process_request_22_3_get_effective_directory_rights(conn, &args, &mut reply)
+                ncp::filesystem::process_request_22_3_get_effective_directory_rights(conn, self.config, &args, &mut reply)
             },
             ncp::parser::Request::GetVolumeInfoWithHandle(args) => {
                 ncp::filesystem::process_request_22_21_get_volume_info_with_handle(conn, &args, &mut reply)
@@ -218,11 +218,14 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::AllocateTemporaryDirectoryHandle(args) => {
                 ncp::filesystem::process_request_22_19_allocate_temp_dir_handle(conn, &self.config, &args, &mut reply)
             },
+            ncp::parser::Request::AllocatePermanentDirectoryHandle(args) => {
+                ncp::filesystem::process_request_22_18_allocate_perm_dir_handle(conn, &self.config, &args, &mut reply)
+            },
             ncp::parser::Request::GetDirectoryPath(args) => {
                 ncp::filesystem::process_request_22_1_get_directory_path(conn, &args, &mut reply)
             },
             ncp::parser::Request::OpenFile(args) => {
-                ncp::filesystem::process_request_76_open_file(conn, &args, &mut reply)
+                ncp::filesystem::process_request_76_open_file(conn, &self.config, &args, &mut reply)
             },
             ncp::parser::Request::ReadFromFile(args) => {
                 ncp::filesystem::process_request_72_read_from_file(conn, &args, &mut reply)
@@ -231,7 +234,7 @@ impl<'a> NcpService<'a> {
                 ncp::filesystem::process_request_66_close_file(conn, &args, &mut reply)
             },
             ncp::parser::Request::SearchForFile(args) => {
-                ncp::filesystem::process_request_64_search_for_file(conn, &args, &mut reply)
+                ncp::filesystem::process_request_64_search_for_file(conn, &self.config, &args, &mut reply)
             },
             ncp::parser::Request::LockPhysicalRecordOld(args) => {
                 ncp::sync::process_request_26_lock_physical_record_old(conn, &args, &mut reply)

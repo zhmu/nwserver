@@ -121,6 +121,13 @@ pub struct AllocateTemporaryDirectoryHandle {
 }
 
 #[derive(NcpPacket)]
+pub struct AllocatePermanentDirectoryHandle {
+    pub source_directory_handle: u8,
+    pub handle_name: u8,
+    pub directory_path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct DeallocateDirectoryHandle {
     #[descr="Deallocate directory handle"]
     pub directory_handle: u8,
@@ -333,6 +340,7 @@ pub enum Request {
     GetEffectiveDirectoryRights(GetEffectiveDirectoryRights),
     GetVolumeInfoWithHandle(GetVolumeInfoWithHandle),
     AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle),
+    AllocatePermanentDirectoryHandle(AllocatePermanentDirectoryHandle),
     DeallocateDirectoryHandle(DeallocateDirectoryHandle),
     OpenFile(OpenFile),
     ReadFromFile(ReadFromFile),
@@ -409,6 +417,7 @@ impl Request {
         return match sub_func {
             1 => { Ok(Request::GetDirectoryPath(GetDirectoryPath::from(rdr)?)) },
             3 => { Ok(Request::GetEffectiveDirectoryRights(GetEffectiveDirectoryRights::from(rdr)?)) },
+            18 => { Ok(Request::AllocatePermanentDirectoryHandle(AllocatePermanentDirectoryHandle::from(rdr)?)) },
             19 => { Ok(Request::AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle::from(rdr)?)) },
             20 => { Ok(Request::DeallocateDirectoryHandle(DeallocateDirectoryHandle::from(rdr)?)) },
             21 => { Ok(Request::GetVolumeInfoWithHandle(GetVolumeInfoWithHandle::from(rdr)?)) },
