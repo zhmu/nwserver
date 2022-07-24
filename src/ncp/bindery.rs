@@ -23,7 +23,7 @@ pub fn process_request_23_61_read_property_value(_conn: &mut connection::Connect
 
     let segment_number = (args.segment_number - 1) as usize;
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let prop = object.get_property_by_name(args.property_name)?;
+    let prop = object.get_property_by_name(args.property_name.as_str())?;
     return if segment_number < prop.values.len() {
         reply.add_data(&prop.values[segment_number]);
         reply.add_u8(if segment_number == prop.values.len() - 1 { 0 } else { 0xff });
@@ -84,7 +84,7 @@ pub fn process_request_23_74_keyed_verify_password(conn: &mut connection::Connec
     let login_key = conn.login_key.as_ref().unwrap();
 
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let property = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"))?;
+    let property = object.get_property_by_name("PASSWORD")?;
     let segment = property.get_segment(0).unwrap();
     let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
     if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
@@ -96,11 +96,16 @@ pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connec
     let login_key = conn.login_key.as_ref().unwrap();
 
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let property = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"))?;
+    if object.contains_property("PASSWORD") {
+        let mut property = object.get_property_by_name("PASSWORD")?;
+        let segment = property.get_segment(0).unwrap();
+        let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
+        if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
+    } else {
+        object.create_property("PASSWORD", bindery::FLAG_STATIC, 0x44)?;
+    }
+    let mut property = object.get_property_by_name("PASSWORD")?;
     let segment = property.get_segment(0).unwrap();
-    let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
-    if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
-
     if args.new_password.len() < 16 { return Err(NetWareError::InvalidPassword) }
 
     let new_password = args.new_password.data();
@@ -117,7 +122,7 @@ pub fn process_request_23_66_delete_object_from_set(conn: &mut connection::Conne
     let member_id = member.id;
 
     let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let members = group.get_property_by_name(args.property_name)?;
+    let members = group.get_property_by_name(args.property_name.as_str())?;
 
     members.remove_member_from_set(member_id)?;
     Ok(())
@@ -128,7 +133,7 @@ pub fn process_request_23_67_is_object_in_set(conn: &mut connection::Connection,
     let member_id = member.id;
 
     let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let members = group.get_property_by_name(args.property_name)?;
+    let members = group.get_property_by_name(args.property_name.as_str())?;
 
     members.is_member_of_set(member_id)
 }
@@ -146,7 +151,7 @@ pub fn process_request_23_65_add_bindery_object_to_set(conn: &mut connection::Co
     let member_id = member.id;
 
     let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let members = group.get_property_by_name(args.property_name)?;
+    let members = group.get_property_by_name(args.property_name.as_str())?;
 
     members.add_member_to_set(member_id)?;
     Ok(())
@@ -155,7 +160,7 @@ pub fn process_request_23_65_add_bindery_object_to_set(conn: &mut connection::Co
 pub fn process_request_23_57_create_property(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateProperty, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
 
-    if let Ok(_) = object.get_property_by_name(args.property_name) {
+    if let Ok(_) = object.get_property_by_name(args.property_name.as_str()) {
         return Err(NetWareError::PropertyExists);
     }
 
@@ -171,7 +176,7 @@ pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connec
 
     let segment_number = (args.segment_number - 1) as usize;
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let prop = object.get_property_by_name(args.property_name)?;
+    let prop = object.get_property_by_name(args.property_name.as_str())?;
     // TODO check security
     return if segment_number < prop.values.len() {
         prop.values[segment_number].copy_from_slice(args.property_value.data());
@@ -181,4 +186,21 @@ pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connec
     } else {
         Err(NetWareError::NoSuchProperty)
     }
+}
+
+pub fn process_request_23_50_create_bindery_object(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateBinderyObject, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
+
+    let object_name = args.object_name.as_str();
+    bindery.create_object(None, object_name, args.object_type, args.object_flags, args.object_security)?;
+    Ok(())
+}
+
+pub fn process_request_23_51_delete_bindery_object(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::DeleteBinderyObject, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
+
+    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let object_id = object.id;
+    bindery.delete_object_by_id(object_id)?;
+    Ok(())
 }

@@ -297,6 +297,20 @@ pub struct WritePropertyValue {
 }
 
 #[derive(NcpPacket)]
+pub struct CreateBinderyObject {
+    pub object_flags: u8,
+    pub object_security: u8,
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct DeleteBinderyObject {
+    pub object_type: u16,
+    pub object_name: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -344,6 +358,8 @@ pub enum Request {
     AddBinderyObjectToSet(AddBinderyObjectToSet),
     CreateProperty(CreateProperty),
     WritePropertyValue(WritePropertyValue),
+    CreateBinderyObject(CreateBinderyObject),
+    DeleteBinderyObject(DeleteBinderyObject),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -416,6 +432,8 @@ impl Request {
             24 => { Ok(Request::KeyedObjectLogin(KeyedObjectLogin::from(rdr)?)) },
             26 => { Ok(Request::GetInternetAddress(GetInternetAddress::from(rdr)?)) },
             28 => { Ok(Request::GetStationLoggedInfo(GetStationLoggedInfo::from(rdr)?)) },
+            50 => { Ok(Request::CreateBinderyObject(CreateBinderyObject::from(rdr)?)) },
+            51 => { Ok(Request::DeleteBinderyObject(DeleteBinderyObject::from(rdr)?)) },
             53 => { Ok(Request::GetBinderyObjectID(GetBinderyObjectID::from(rdr)?)) },
             54 => { Ok(Request::GetBinderyObjectName(GetBinderyObjectName::from(rdr)?)) },
             55 => { Ok(Request::ScanBinderyObject(ScanBinderyObject::from(rdr)?)) },

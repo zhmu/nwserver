@@ -293,6 +293,12 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::WritePropertyValue(args) => {
                 ncp::bindery::process_request_23_62_write_property_value(conn, &mut self.bindery, &args, &mut reply)
             },
+            ncp::parser::Request::CreateBinderyObject(args) => {
+                ncp::bindery::process_request_23_50_create_bindery_object(conn, &mut self.bindery, &args, &mut reply)
+            },
+            ncp::parser::Request::DeleteBinderyObject(args) => {
+                ncp::bindery::process_request_23_51_delete_bindery_object(conn, &mut self.bindery, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

@@ -85,7 +85,7 @@ pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connectio
     let login_key = conn.login_key.as_ref().unwrap();
 
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let property = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"))?;
+    let property = object.get_property_by_name("PASSWORD")?;
 
     let segment = property.get_segment(0).unwrap();
     let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());

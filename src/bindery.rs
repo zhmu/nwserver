@@ -131,13 +131,32 @@ impl Object {
         Self{ id, name, typ, flag, security, properties: Vec::new() }
     }
 
-    pub fn get_property_by_name(&mut self, name: MaxBoundedString) -> Result<&mut Property, NetWareError> {
+    pub fn contains_property(&self, name: &str) -> bool {
+        let name = MaxBoundedString::from_str(name);
+        for prop in &self.properties {
+            if prop.name.equals(name) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_property_by_name(&mut self, name: &str) -> Result<&mut Property, NetWareError> {
+        let name = MaxBoundedString::from_str(name);
         for prop in self.properties.iter_mut() {
             if prop.name.equals(name) {
                 return Ok(prop)
             }
         }
         Err(NetWareError::NoSuchProperty)
+    }
+
+    pub fn get_or_create_property_by_name(&mut self, name: &str, flags: Flag, security: Security) -> Result<&mut Property, NetWareError> {
+        // TODO Workaround borrow checker (should be fixed by NLL, one day...)
+        if self.contains_property(name) {
+            return self.get_property_by_name(name);
+        }
+        return self.create_property(name, flags, security);
     }
 
     pub fn create_property(&mut self, name: &str, flags: Flag, security: Security) -> Result<&mut Property, NetWareError> {
@@ -256,6 +275,16 @@ impl Bindery {
         Ok(self.objects.last_mut().unwrap())
     }
 
+    pub fn delete_object_by_id(&mut self, object_id: ObjectID) -> Result<(), NetWareError> {
+        for (n, object) in self.objects.iter().enumerate() {
+            if object.id == object_id {
+                self.objects.remove(n);
+                return Ok(());
+            }
+        }
+        Err(NetWareError::NoSuchObject)
+    }
+
     fn add_file_server(&mut self, server_name: &str, server_addr: IpxAddr) -> Result<(), NetWareError> {
         let object_id = self.generate_next_id();
         let mut server = self.create_object(None, server_name, TYPE_FILE_SERVER, FLAG_DYNAMIC, 0x40)?;
@@ -272,7 +301,7 @@ impl Bindery {
 
         let password_data = crypto::encrypt_bindery_password(object.id, password);
 
-        let password = object.get_property_by_name(MaxBoundedString::from_str("PASSWORD"))?;
+        let password = object.get_property_by_name("PASSWORD")?;
 
         password.set_data(0, &password_data);
         Ok(())
@@ -294,16 +323,16 @@ impl Bindery {
 
     fn add_member_to_group(&mut self, group_id: bindery::ObjectID, member_id: bindery::ObjectID) -> Result<(), NetWareError> {
         let group = self.get_object_by_id(group_id)?;
-        let members = group.get_property_by_name(MaxBoundedString::from_str("GROUP_MEMBERS"))?;
+        let members = group.get_property_by_name("GROUP_MEMBERS")?;
         members.add_member_to_set(member_id)?;
         Ok(())
     }
 
     fn add_group_to_member(&mut self, member_id: bindery::ObjectID, group_id: bindery::ObjectID) -> Result<(), NetWareError> {
         let member = self.get_object_by_id(member_id)?;
-        let groups_im_in = member.get_property_by_name(MaxBoundedString::from_str("GROUPS_I'M_IN"))?;
+        let groups_im_in = member.get_property_by_name("GROUPS_I'M_IN")?;
         groups_im_in.add_member_to_set(group_id)?;
-        let security_equals = member.get_property_by_name(MaxBoundedString::from_str("SECURITY_EQUALS"))?;
+        let security_equals = member.get_property_by_name("SECURITY_EQUALS")?;
         security_equals.add_member_to_set(group_id)?;
         Ok(())
     }
