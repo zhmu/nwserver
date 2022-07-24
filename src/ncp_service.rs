@@ -308,6 +308,9 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::DeleteDirectory(args) => {
                 ncp::filesystem::process_request_22_11_delete_directory(conn, self.config, &args, &mut reply)
             },
+            ncp::parser::Request::DownFileServer(args) => {
+                ncp::server::process_request_23_211_down_file_server(conn, &args, &mut reply)
+            }
         };
         self.send(dest, result, &mut reply);
     }

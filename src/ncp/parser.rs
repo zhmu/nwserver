@@ -332,6 +332,11 @@ pub struct DeleteDirectory {
 }
 
 #[derive(NcpPacket)]
+pub struct DownFileServer {
+    pub force_flag: u8,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -384,6 +389,7 @@ pub enum Request {
     DeleteBinderyObject(DeleteBinderyObject),
     CreateDirectory(CreateDirectory),
     DeleteDirectory(DeleteDirectory),
+    DownFileServer(DownFileServer),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -474,6 +480,7 @@ impl Request {
             72 => { Ok(Request::GetBinderyObjectAccessLevel(GetBinderyObjectAccessLevel::from(rdr)?)) },
             74 => { Ok(Request::KeyedVerifyPassword(KeyedVerifyPassword::from(rdr)?)) },
             75 => { Ok(Request::KeyedChangePassword(KeyedChangePassword::from(rdr)?)) },
+            211 => { Ok(Request::DownFileServer(DownFileServer::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 23, sub_func)) },
         }
     }

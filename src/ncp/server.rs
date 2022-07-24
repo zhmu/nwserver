@@ -13,6 +13,8 @@ use crate::types::*;
 use crate::ncp_service::NcpReplyPacket;
 use super::parser;
 
+use log::*;
+
 use chrono::{Local, Timelike, Datelike};
 
 pub fn process_request_23_17_get_fileserver_info(config: &config::Configuration, clients: &clients::Clients, _args: &parser::GetFileServerInfo, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
@@ -57,4 +59,10 @@ pub fn process_request_20_get_fileserver_date_and_time(_conn: &mut connection::C
     let weekday = now.date().weekday();
     reply.add_u8(weekday.num_days_from_sunday() as u8); // Day of the week
     Ok(())
+}
+
+pub fn process_request_23_211_down_file_server(_conn: &mut connection::Connection, _args: &parser::DownFileServer, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    // XXX We should do this a bit more graceful ...
+    info!("SERVER DOWN REQUESTED - EXITING!");
+    std::process::exit(1);
 }
