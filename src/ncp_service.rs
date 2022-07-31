@@ -330,3 +330,14 @@ impl<'a> NcpService<'a> {
         Ok(())
     }
 }
+
+impl<'a> Drop for NcpService<'a> {
+    fn drop(&mut self) {
+        if let Some(path) = self.config.get_bindery_file() {
+            match self.bindery.save(path) {
+                Ok(()) => { info!("bindery saved to '{}'", path); },
+                Err(e) => { error!("unable to save bindery to '{}': {:?}", path, e); },
+            }
+        }
+    }
+}
