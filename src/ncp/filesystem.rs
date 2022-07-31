@@ -11,10 +11,13 @@ use crate::handle;
 use crate::types::*;
 use crate::error::*;
 use crate::ncp_service::NcpReplyPacket;
+use chrono::{Datelike, DateTime, Timelike, Local};
+use std::convert::TryInto;
 
 use std::io::{Read, Seek, SeekFrom};
 use std::fs::File;
 use std::path::Path;
+use std::time::SystemTime;
 
 const _SA_HIDDEN: u8 = 0x02;
 const _SA_SYSTEM: u8 = 0x04;
@@ -97,6 +100,50 @@ impl NetWarePath {
     }
 }
 
+fn system_time_to_date(st: &SystemTime) -> u16 {
+    let dt: DateTime<Local> = st.clone().into();
+    let day = dt.day() as u32;
+    let month = dt.month() as u32;
+    let year = dt.year() as u32;
+    (((year - 1980) << 9) | ((month & 15) << 5) | (day & 31)).try_into().unwrap()
+}
+
+fn system_time_to_time(st: &SystemTime) -> u16 {
+    let dt: DateTime<Local> = st.clone().into();
+    let min = dt.minute() as u32;
+    let hour = dt.hour() as u32;
+    let second = dt.second() as u32;
+    ((hour << 11) | ((min & 63) << 5) | ((second / 2) & 31)).try_into().unwrap()
+}
+
+fn stream_file_times(md: &std::fs::Metadata, reply: &mut NcpReplyPacket) {
+    let creation_date;
+    if let Ok(st) = md.created() {
+        creation_date = system_time_to_date(&st);
+    } else {
+        creation_date = 0;
+    }
+    reply.add_u16(creation_date);
+    let access_date;
+    if let Ok(st) = md.accessed() {
+        access_date = system_time_to_date(&st);
+    } else {
+        access_date = 0;
+    }
+    reply.add_u16(access_date);
+    let update_date;
+    let update_time;
+    if let Ok(st) = md.modified() {
+        update_date = system_time_to_date(&st);
+        update_time = system_time_to_time(&st);
+    } else {
+        update_date = 0;
+        update_time = 0;
+    }
+    reply.add_u16(update_date);
+    reply.add_u16(update_time);
+}
+
 pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let nw_path = NetWarePath::new(conn, config, args.handle, &args.path)?;
     let contents = retrieve_directory_contents(nw_path.get_local_path())?;
@@ -138,8 +185,17 @@ pub fn process_request_63_file_search_continue(conn: &mut connection::Connection
                             let attr = ATTR_SUBDIRECTORY;
                             reply.add_u8(attr); // directory attributes
                             reply.add_u8(0xff); // directory access rights
-                            reply.add_u16(0); // creation date
-                            reply.add_u16(0); // creation time
+                            let creation_date;
+                            let creation_time;
+                            if let Ok(st) = md.created() {
+                                creation_date = system_time_to_date(&st);
+                                creation_time = system_time_to_time(&st);
+                            } else {
+                                creation_date = 0;
+                                creation_time = 0;
+                            }
+                            reply.add_u16(creation_date);
+                            reply.add_u16(creation_time);
                             reply.add_u32(0); // owner id
                             reply.add_u16(0); // reserved
                             reply.add_u16(0xd1d1); // directory magic
@@ -152,10 +208,7 @@ pub fn process_request_63_file_search_continue(conn: &mut connection::Connection
                             reply.add_u8(0); // file attributes
                             reply.add_u8(0); // file mode
                             reply.add_u32(md.len() as u32); // file length
-                            reply.add_u16(0); // creation date
-                            reply.add_u16(0); // access date
-                            reply.add_u16(0); // update date
-                            reply.add_u16(0); // update time
+                            stream_file_times(&md, reply);
                             return Ok(())
                         }
                     }
@@ -264,10 +317,7 @@ pub fn process_request_76_open_file<'a>(conn: &mut connection::Connection, confi
         reply.add_u8(0); // attributes
         reply.add_u8(0); // file execute type
         reply.add_u32(md.len() as u32); // file length
-        reply.add_u16(0); // creation date TODO
-        reply.add_u16(0); // last access date TODO
-        reply.add_u16(0); // last update date TODO
-        reply.add_u16(0); // last update time TODO
+        stream_file_times(&md, reply);
         Ok(())
     } else {
         Err(NetWareError::InvalidPath)
@@ -321,10 +371,7 @@ pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection,
                 reply.add_u8(attr); // file attributes
                 reply.add_u8(0); // file execute type
                 reply.add_u32(md.len() as u32); // file length
-                reply.add_u16(0); // creation date
-                reply.add_u16(0); // access date
-                reply.add_u16(0); // update date
-                reply.add_u16(0); // update time
+                stream_file_times(&md, reply);
                 return Ok(())
             }
         }
