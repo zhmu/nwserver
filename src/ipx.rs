@@ -52,23 +52,17 @@ pub struct Receiver {
 
 impl Receiver {
     pub fn next(&mut self) -> Option<IpxPacket> {
-        loop {
-            match self.rx.next() {
-                Ok(packet) => {
-                    let ethernet_packet = EthernetPacket::new(packet);
-                    if let Some(packet) = ethernet_packet {
-                        if packet.get_ethertype() == EtherTypes::Ipx {
-                            let payload = packet.payload();
-                            self.payload[0..payload.len()].copy_from_slice(payload);
-                            return IpxPacket::new(&self.payload);
-                        }
-                    }
-                },
-                Err(err) => {
-                    panic!("cannot read IPX endpoint: {}", err);
+        if let Ok(packet) = self.rx.next() {
+            let ethernet_packet = EthernetPacket::new(packet);
+            if let Some(packet) = ethernet_packet {
+                if packet.get_ethertype() == EtherTypes::Ipx {
+                    let payload = packet.payload();
+                    self.payload[0..payload.len()].copy_from_slice(payload);
+                    return IpxPacket::new(&self.payload);
                 }
             }
         }
+        None
     }
 }
 

@@ -16,6 +16,10 @@ use nwserver::ncp_service;
 use nwserver::consts;
 use nwserver::config;
 
+use signal_hook;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 struct NWServer<'a> {
     _config: &'a config::Configuration,
     _tx: &'a ipx::Transmitter,
@@ -84,10 +88,15 @@ fn main() -> Result<(), std::io::Error> {
     let mut server = NWServer::new(&config, &transmitter);
     server.sap.advertise();
 
-    loop {
+    let terminate = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&terminate))?;
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminate))?;
+    while !terminate.load(Ordering::Relaxed) {
         if let Some(packet) = receiver.next() {
             server.process_packet(&packet);
         }
     }
-    //Ok(())
+
+    info!("Terminating");
+    Ok(())
 }
