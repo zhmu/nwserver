@@ -337,6 +337,11 @@ pub struct DownFileServer {
 }
 
 #[derive(NcpPacket)]
+pub struct GetVolumeInfoWithNumber {
+    pub volume_number: u8
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -390,6 +395,7 @@ pub enum Request {
     CreateDirectory(CreateDirectory),
     DeleteDirectory(DeleteDirectory),
     DownFileServer(DownFileServer),
+    GetVolumeInfoWithNumber(GetVolumeInfoWithNumber),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -406,6 +412,7 @@ impl Request {
 
     pub fn from_2222<T: Read + ReadBytesExt>(header: &NcpHeader, rdr: &mut T) -> Result<Self, NetWareError> {
         return match header.function_code {
+            18 => { Ok(Request::GetVolumeInfoWithNumber(GetVolumeInfoWithNumber::from(rdr)?)) },
             20 => { Ok(Request::GetFileServerDateAndTime(GetFileServerDateAndTime::from(rdr)?)) },
             22 => { Request::from_2222_22(rdr) },
             23 => { Request::from_2222_23(rdr) },

@@ -230,10 +230,9 @@ pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connec
     Ok(())
 }
 
-pub fn process_request_22_21_get_volume_info_with_handle<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &MaxBoundedString::empty())?;
-    let volume = config.get_volumes().get_volume_by_number(nw_path.get_volume_index() as usize)?;
-    let st = fs2::statvfs(nw_path.get_local_path())?;
+fn add_volume_info(config: &config::Configuration, volume_number: u8, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let volume = config.get_volumes().get_volume_by_number(volume_number as usize)?;
+    let st = fs2::statvfs(&volume.path)?;
 
     // The largest volume size that can be represented is roughly 2TB when
     // using 65535 sectors per cluster (65535 * 512 = ~32MB, and 65535 * ~32MB
@@ -253,6 +252,15 @@ pub fn process_request_22_21_get_volume_info_with_handle<'a>(conn: &mut connecti
     let removable_flag = 0;
     reply.add_u16(removable_flag);
     Ok(())
+}
+
+pub fn process_request_22_21_get_volume_info_with_handle<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &MaxBoundedString::empty())?;
+    add_volume_info(config, nw_path.get_volume_index(), reply)
+}
+
+pub fn process_request_18_get_volume_info_with_number<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetVolumeInfoWithNumber, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    add_volume_info(config, args.volume_number, reply)
 }
 
 pub fn process_request_22_20_deallocate_dir_handle(conn: &mut connection::Connection, args: &parser::DeallocateDirectoryHandle, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
@@ -354,7 +362,6 @@ pub fn process_request_66_close_file(conn: &mut connection::Connection, args: &p
 pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::SearchForFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let (path, filename) = split_path(&args.filename);
     let nw_path = NetWarePath::new(conn, config, args.directory_handle, &path)?;
-    println!("sff '{}' '{}'", nw_path.get_local_path(), nw_path.get_volume_path());
     let entries = retrieve_directory_contents(nw_path.get_local_path())?;
 
     let mut index = args.last_search_index as usize;

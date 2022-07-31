@@ -311,6 +311,9 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::DownFileServer(args) => {
                 ncp::server::process_request_23_211_down_file_server(conn, &args, &mut reply)
             }
+            ncp::parser::Request::GetVolumeInfoWithNumber(args) => {
+                ncp::filesystem::process_request_18_get_volume_info_with_number(conn, self.config, &args, &mut reply)
+            }
         };
         self.send(dest, result, &mut reply);
     }
