@@ -76,7 +76,7 @@ impl Property {
 
     pub fn add_member_to_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
         for value in &mut self.values {
-            for offset in (0..128).step_by(4) {
+            for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
                 let buf = &mut value[offset..offset + 4];
                 let value_id = BigEndian::read_u32(buf);
                 if value_id == ID_EMPTY {
@@ -90,7 +90,7 @@ impl Property {
 
     pub fn remove_member_from_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
         for value in &mut self.values {
-            for offset in (0..128).step_by(4) {
+            for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
                 let buf = &mut value[offset..offset + 4];
                 let value_id = BigEndian::read_u32(buf);
                 if value_id == member_id {
@@ -104,7 +104,7 @@ impl Property {
 
     pub fn is_member_of_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
         for value in &mut self.values {
-            for offset in (0..128).step_by(4) {
+            for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
                 let buf = &mut value[offset..offset + 4];
                 let value_id = BigEndian::read_u32(buf);
                 if value_id == member_id {

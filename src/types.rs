@@ -5,6 +5,7 @@
  * For conditions of distribution and use, see LICENSE file
  */
 use crate::error::NetWareError;
+use crate::consts;
 use pnet::util::MacAddr;
 use std::fmt;
 use rand::Rng;
@@ -449,14 +450,14 @@ impl fmt::Debug for LoginKey {
     }
 }
 
-pub struct PropertyValue(pub [ u8; 128 ]);
+pub struct PropertyValue(pub [ u8; consts::PROPERTY_SEGMENT_LENGTH ]);
 
 impl PropertyValue {
     pub const fn empty() -> Self {
-        Self([ 0u8; 128 ])
+        Self([ 0u8; consts::PROPERTY_SEGMENT_LENGTH ])
     }
 
-    pub fn data(&self) -> &[u8; 128] {
+    pub fn data(&self) -> &[u8; consts::PROPERTY_SEGMENT_LENGTH ] {
         &self.0
     }
 

@@ -210,7 +210,7 @@ impl<'a> NcpService<'a> {
                 ncp::filesystem::process_request_22_3_get_effective_directory_rights(conn, self.config, &args, &mut reply)
             },
             ncp::parser::Request::GetVolumeInfoWithHandle(args) => {
-                ncp::filesystem::process_request_22_21_get_volume_info_with_handle(conn, &args, &mut reply)
+                ncp::filesystem::process_request_22_21_get_volume_info_with_handle(conn, self.config, &args, &mut reply)
             },
             ncp::parser::Request::DeallocateDirectoryHandle(args) => {
                 ncp::filesystem::process_request_22_20_deallocate_dir_handle(conn, &args, &mut reply)

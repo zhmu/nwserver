@@ -6,6 +6,7 @@
  */
 use crate::connection;
 use crate::config;
+use crate::consts;
 use super::parser;
 use crate::handle;
 use crate::types::*;
@@ -229,19 +230,24 @@ pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connec
     Ok(())
 }
 
-pub fn process_request_22_21_get_volume_info_with_handle(conn: &mut connection::Connection, args: &parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let dh = conn.get_dir_handle(args.directory_handle)?;
-    let volume = dh.volume.unwrap();
+pub fn process_request_22_21_get_volume_info_with_handle<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &MaxBoundedString::empty())?;
+    let volume = config.get_volumes().get_volume_by_number(nw_path.get_volume_index() as usize)?;
+    let st = fs2::statvfs(nw_path.get_local_path())?;
 
-    let sectors_per_cluster = 128; // 64k
-    reply.add_u16(sectors_per_cluster);
-    let total_volume_sectors = 1000;
-    reply.add_u16(total_volume_sectors);
-    let available_clusters = 900;
-    reply.add_u16(available_clusters);
-    let total_directory_slots = 1000;
+    // The largest volume size that can be represented is roughly 2TB when
+    // using 65535 sectors per cluster (65535 * 512 = ~32MB, and 65535 * ~32MB
+    // = ~2TB)
+    let sectors_per_cluster: u64 = 65535;
+    reply.add_u16(sectors_per_cluster as u16);
+    let bytes_per_cluster: u64 = sectors_per_cluster * consts::SECTOR_SIZE;
+    let total_volume_clusters = st.total_space() / bytes_per_cluster;
+    reply.add_u16(total_volume_clusters.try_into().unwrap_or(u16::MAX));
+    let available_clusters = st.available_space() / bytes_per_cluster;
+    reply.add_u16(available_clusters.try_into().unwrap_or(u16::MAX));
+    let total_directory_slots = u16::MAX;
     reply.add_u16(total_directory_slots);
-    let available_directory_slots = 1000;
+    let available_directory_slots = u16::MAX;
     reply.add_u16(available_directory_slots);
     volume.name.to_raw(reply);
     let removable_flag = 0;
