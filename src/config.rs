@@ -111,6 +111,7 @@ struct TomlConfig {
     groups: BTreeMap<String, TomlGroup>,
     volumes: BTreeMap<String, TomlVolume>,
     login: TomlLogin,
+    unix: Option<TomlUnix>,
 }
 
 #[derive(Deserialize)]
@@ -140,6 +141,12 @@ pub struct TomlVolume {
 pub struct TomlLogin {
     pub allowed: bool,
     pub visitor_root: String,
+}
+
+#[derive(Deserialize)]
+pub struct TomlUnix {
+    pub user: Option<String>,
+    pub group: Option<String>,
 }
 
 fn verify_and_convert_string<const MAX_LENGTH: usize>(input: &str) -> Result<BoundedString<{ MAX_LENGTH }>, ConfigError> {
@@ -231,5 +238,9 @@ impl Configuration {
 
     pub fn get_login_root(&self) -> &str {
         &self.login_root
+    }
+
+    pub fn get_unix(&self) -> &Option<TomlUnix> {
+        &self.toml.unix
     }
 }

@@ -1,6 +1,11 @@
 server_name = "BUCKET"
 bindery_file = "bindery.toml"
 
+[unix]
+# if set, changes to this user/group after startup
+user = "rink"
+group = "rink"
+
 [login]
 allowed = true
 # mapped path when not logged in; can't access anything outside this path

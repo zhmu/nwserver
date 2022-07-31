@@ -19,6 +19,8 @@ use nwserver::config;
 use signal_hook;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::io::{Error, ErrorKind};
+use nix::unistd::{User, Group};
 
 struct NWServer<'a> {
     _config: &'a config::Configuration,
@@ -58,6 +60,30 @@ impl<'a> NWServer<'a> {
     }
 }
 
+fn change_credentials(unix: &config::TomlUnix) -> Result<(), std::io::Error> {
+    if let Some(groupname) = &unix.group {
+        let group = Group::from_name(&groupname)?;
+        if let Some(group) = group {
+            let gid = group.gid;
+            nix::unistd::setresgid(gid, gid, gid).map_err(|e| Error::new(ErrorKind::Other, format!("cannot change gid: {}", e)))?;
+        } else {
+            return Err(Error::new(ErrorKind::Other, format!("group '{}' not found", groupname)));
+        }
+    }
+
+    if let Some(username) = &unix.user {
+        let user = User::from_name(&username)?;
+        if let Some(user) = user {
+            let uid = user.uid;
+            nix::unistd::setresuid(uid, uid, uid).map_err(|e| Error::new(ErrorKind::Other, format!("cannot change uid: {}", e)))?;
+        } else {
+            return Err(Error::new(ErrorKind::Other, format!("user '{}' not found", username)));
+        }
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<(), std::io::Error> {
     pretty_env_logger::init();
 
@@ -81,6 +107,11 @@ fn main() -> Result<(), std::io::Error> {
         return Ok(())
     }
     let (mut receiver, transmitter) = endpoint.unwrap();
+
+    if let Some(unix) = config.get_unix() {
+        change_credentials(unix)?;
+    }
+
     info!("Using interface {} mac {}", interface, transmitter.get_mac_address());
 
     config.set_mac_address(&transmitter.get_mac_address());
