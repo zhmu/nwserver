@@ -13,6 +13,7 @@ enum Type {
     MaxBoundedString,
     NcpFileHandle,
     PropertyValue,
+    MaxBoundedBuffer,
 }
 
 struct Field {
@@ -41,6 +42,7 @@ fn parse_type(ty: &syn::Type) -> Option<Type> {
         "MaxBoundedString" => Some(Type::MaxBoundedString),
         "NcpFileHandle" => Some(Type::NcpFileHandle),
         "PropertyValue" => Some(Type::PropertyValue),
+        "MaxBoundedBuffer" => Some(Type::MaxBoundedBuffer),
         _ => { None }
     }
 }
@@ -55,6 +57,7 @@ fn generate_read_for_type(ty: &Type, rdr: &str) -> String {
         Type::MaxBoundedString => { format!("MaxBoundedString::from({rdr})?", rdr=rdr) },
         Type::NcpFileHandle => { format!("NcpFileHandle::from({rdr})?", rdr=rdr) },
         Type::PropertyValue => { format!("PropertyValue::from({rdr})?", rdr=rdr) },
+        Type::MaxBoundedBuffer => { format!("MaxBoundedBuffer::from({rdr})?", rdr=rdr) },
     }
 }
 

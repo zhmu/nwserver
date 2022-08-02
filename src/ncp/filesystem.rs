@@ -15,7 +15,7 @@ use crate::ncp_service::NcpReplyPacket;
 use chrono::{Datelike, DateTime, Timelike, Local};
 use std::convert::TryInto;
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::fs::File;
 use std::path::Path;
 use std::time::SystemTime;
@@ -323,7 +323,8 @@ pub fn process_request_76_open_file<'a>(conn: &mut connection::Connection, confi
     let filename = extract_filename_from(nw_path.get_local_path())?;
     if let Ok(f) = File::open(nw_path.get_local_path()) {
         let md = f.metadata()?;
-        let (fh_index, _) = conn.allocate_file_handle(f)?;
+        let (fh_index, fh) = conn.allocate_file_handle(f)?;
+        fh.writable = nw_path.is_writeable();
         let ncp_fh = NcpFileHandle::new(fh_index);
         ncp_fh.to(reply);
         reply.add_u16(0); // reserved
@@ -416,6 +417,31 @@ pub fn process_request_22_11_delete_directory<'a>(conn: &mut connection::Connect
     }
 }
 
+pub fn process_request_67_create_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::CreateFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.filename)?;
+    if !nw_path.is_writeable() {
+        return Err(NetWareError::NoCreatePrivileges)
+    }
+
+    let filename = extract_filename_from(nw_path.get_local_path())?;
+    if let Ok(f) = File::create(nw_path.get_local_path()) {
+        let md = f.metadata()?;
+        let (fh_index, fh) = conn.allocate_file_handle(f)?;
+        fh.writable = true;
+        let ncp_fh = NcpFileHandle::new(fh_index);
+        ncp_fh.to(reply);
+        reply.add_u16(0); // reserved
+        filename.to(reply);
+        reply.add_u8(0); // attributes
+        reply.add_u8(0); // file execute type
+        reply.add_u32(md.len() as u32); // file length
+        stream_file_times(&md, reply);
+        return Ok(())
+    } else {
+        return Err(NetWareError::InvalidPath)
+    }
+}
+
 fn retrieve_directory_contents(path: &String) -> Result<Vec<DosFileName>, std::io::Error> {
     let path = Path::new(path);
     let mut results: Vec<DosFileName> = Vec::new();
@@ -444,6 +470,37 @@ fn retrieve_directory_contents(path: &String) -> Result<Vec<DosFileName>, std::i
         }
     }
     Ok(results)
+}
+
+pub fn process_request_73_write_to_file(conn: &mut connection::Connection, args: &parser::WriteToFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let fh = conn.get_mut_file_handle(args.file_handle.get_value())?;
+    if !fh.writable {
+        return Err(NetWareError::NoWritePrivileges);
+    }
+    let mut file = fh.file.as_ref().unwrap();
+
+    file.seek(SeekFrom::Start(args.offset as u64))?;
+    file.write(args.data.data())?;
+    Ok(())
+}
+
+pub fn process_request_68_erase_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::EraseFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let (path, filename) = split_path(&args.filename);
+    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &path)?;
+    if !nw_path.is_writeable() {
+        return Err(NetWareError::NoDeletePrivileges)
+    }
+
+    // Need to handle wildcards here, so just grab the directory contents and
+    // see what we need to remove
+    let contents = retrieve_directory_contents(nw_path.get_local_path())?;
+    for entry in &contents {
+        if !entry.matches(&filename.data()) { continue; }
+
+        let path = format!("{}/{}", nw_path.get_local_path(), entry);
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {

@@ -10,11 +10,12 @@ use crate::config;
 #[derive(Debug)]
 pub struct FileHandle {
     pub file: Option<std::fs::File>,
+    pub writable: bool
 }
 
 impl FileHandle {
     pub const fn zero() -> Self {
-        Self{ file: None }
+        Self{ file: None, writable: false }
     }
 
     pub fn is_available(&self) -> bool {

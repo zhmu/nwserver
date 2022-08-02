@@ -12,7 +12,7 @@ use rand::Rng;
 
 use std::convert::TryInto;
 use std::io::Read;
-use byteorder::{ByteOrder, ReadBytesExt, BigEndian};
+use byteorder::{ByteOrder, ReadBytesExt, BigEndian, LittleEndian};
 use pnet::packet::PrimitiveValues;
 
 pub type LeU32 = u32;
@@ -482,6 +482,46 @@ impl fmt::Display for PropertyValue {
 impl fmt::Debug for PropertyValue {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, fmt)
+    }
+}
+
+#[derive(Copy,Clone,Debug)]
+pub struct MaxBoundedBuffer {
+    data: [ u8; 65535 ],
+    length: usize,
+}
+
+impl MaxBoundedBuffer {
+    pub const fn empty() -> Self {
+        let data = [ 0u8; 65535 ];
+        Self{ data, length: 0 }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data[0..self.length]
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
+    pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
+        let mut buf = Self::empty();
+        buf.length = rdr.read_u16::<BigEndian>()?.into();
+        rdr.read(&mut buf.data[0..buf.length])?;
+        Ok(buf)
+    }
+
+}
+
+impl fmt::Display for MaxBoundedBuffer {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let data = &self.data[0..self.length];
+        write!(fmt, "{:?}", data)
     }
 }
 

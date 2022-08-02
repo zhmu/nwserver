@@ -313,7 +313,16 @@ impl<'a> NcpService<'a> {
             }
             ncp::parser::Request::GetVolumeInfoWithNumber(args) => {
                 ncp::filesystem::process_request_18_get_volume_info_with_number(conn, self.config, &args, &mut reply)
-            }
+            },
+            ncp::parser::Request::CreateFile(args) => {
+                ncp::filesystem::process_request_67_create_file(conn, self.config, &args, &mut reply)
+            },
+            ncp::parser::Request::WriteToFile(args) => {
+                ncp::filesystem::process_request_73_write_to_file(conn, &args, &mut reply)
+            },
+            ncp::parser::Request::EraseFile(args) => {
+                ncp::filesystem::process_request_68_erase_file(conn, self.config, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

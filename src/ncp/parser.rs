@@ -342,6 +342,28 @@ pub struct GetVolumeInfoWithNumber {
 }
 
 #[derive(NcpPacket)]
+pub struct CreateFile {
+    pub directory_handle: u8,
+    pub file_attributes: u8,
+    pub filename: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct WriteToFile {
+    _reserved: u8,
+    pub file_handle: NcpFileHandle,
+    pub offset: u32,
+    pub data: MaxBoundedBuffer,
+}
+
+#[derive(NcpPacket)]
+pub struct EraseFile {
+    pub directory_handle: u8,
+    pub search_attr: u8,
+    pub filename: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -396,6 +418,9 @@ pub enum Request {
     DeleteDirectory(DeleteDirectory),
     DownFileServer(DownFileServer),
     GetVolumeInfoWithNumber(GetVolumeInfoWithNumber),
+    CreateFile(CreateFile),
+    WriteToFile(WriteToFile),
+    EraseFile(EraseFile),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -425,7 +450,10 @@ impl Request {
             63 => { Ok(Request::FileSearchContinue(FileSearchContinue::from(rdr)?)) },
             64 => { Ok(Request::SearchForFile(SearchForFile::from(rdr)?)) },
             66 => { Ok(Request::CloseFile(CloseFile::from(rdr)?)) },
+            67 => { Ok(Request::CreateFile(CreateFile::from(rdr)?)) },
+            68 => { Ok(Request::EraseFile(EraseFile::from(rdr)?)) },
             72 => { Ok(Request::ReadFromFile(ReadFromFile::from(rdr)?)) },
+            73 => { Ok(Request::WriteToFile(WriteToFile::from(rdr)?)) },
             76 => { Ok(Request::OpenFile(OpenFile::from(rdr)?)) },
             97 => { Ok(Request::GetBigPacketNCPMaxPacketSize(GetBigPacketNCPMaxPacketSize::from(rdr)?)) },
             101 => { Ok(Request::PacketBurstConnectionRequest(PacketBurstConnectionRequest::from(rdr)?)) },

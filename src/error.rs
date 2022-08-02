@@ -33,6 +33,7 @@ pub enum NetWareError {
     NoCreatePrivileges,
     NoDeletePrivileges,
     ServerLoginLocked,
+    NoWritePrivileges,
 }
 
 impl NetWareError {
@@ -45,6 +46,7 @@ impl NetWareError {
             NetWareError::NoCreatePrivileges => 0x84,
             NetWareError::InvalidFileHandle => 0x88,
             NetWareError::NoDeletePrivileges => 0x8a,
+            NetWareError::NoWritePrivileges => 0x94,
             NetWareError::BadDirectoryHandle => 0x9b,
             NetWareError::NoDirectoryHandlesLeft => 0x9d,
             NetWareError::InvalidPath => 0x9c,
