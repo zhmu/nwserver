@@ -9,6 +9,7 @@ use crate::config;
 use crate::consts;
 use crate::clients;
 use crate::ipx;
+use crate::trustee;
 use crate::types::*;
 use crate::error::NetWareError;
 use crate::ncp;
@@ -30,6 +31,7 @@ pub struct NcpService<'a> {
     tx: &'a ipx::Transmitter,
     clients: clients::Clients<'a>,
     bindery: bindery::Bindery,
+    trustee_db: trustee::TrusteeDB,
 }
 
 const NCP_REPLY_HEADER_LENGTH: usize = 8;
@@ -117,7 +119,20 @@ impl<'a> NcpService<'a> {
             info!("initialising bindery users and groups");
             bindery.create_users_and_groups(config).expect("unable to create bindery users/groups");
         }
-        NcpService{ config, tx, clients, bindery }
+
+        let mut trustee_db = trustee::TrusteeDB::new();
+        info!("initialising trustee database");
+
+        let rwcemf = trustee::RIGHT_READ | trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY | trustee::RIGHT_FILESCAN;
+        trustee_db.add_trustee_for_path("SYS:", trustee::Trustee{ object_id: bindery::ID_SUPERVISOR, rights: rwcemf | trustee::RIGHT_ACCESS_CONTROL | trustee::RIGHT_SUPERVISOR });
+        trustee_db.add_trustee_for_path("SYS:LOGIN", trustee::Trustee{ object_id: bindery::ID_NOT_LOGGED_IN, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
+
+        let everyone_id = bindery.get_object_by_name(MaxBoundedString::from_str("EVERYONE"), bindery::TYPE_USER_GROUP).expect("cannot find EVERYONE group").id;
+        trustee_db.add_trustee_for_path("SYS:LOGIN", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
+        trustee_db.add_trustee_for_path("SYS:PUBLIC", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
+        trustee_db.add_trustee_for_path("SYS:TEMP", trustee::Trustee{ object_id: everyone_id, rights: rwcemf });
+
+        NcpService{ config, tx, clients, bindery, trustee_db }
     }
 
     fn send_reply(&self, dest: &IpxAddr, data: &[u8]) {
@@ -192,7 +207,7 @@ impl<'a> NcpService<'a> {
                 ncp::connection::process_request_33_negotiate_buffer_size(conn, &args, &mut reply)
             },
             ncp::parser::Request::FileSearchInit(args) => {
-                ncp::filesystem::process_request_62_file_search_init(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_62_file_search_init(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::FileSearchContinue(args) => {
                 ncp::filesystem::process_request_63_file_search_continue(conn, &args, &mut reply)
@@ -207,25 +222,25 @@ impl<'a> NcpService<'a> {
                 ncp::server::process_request_20_get_fileserver_date_and_time(conn, &args, &mut reply)
             },
             ncp::parser::Request::GetEffectiveDirectoryRights(args) => {
-                ncp::filesystem::process_request_22_3_get_effective_directory_rights(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_22_3_get_effective_directory_rights(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::GetVolumeInfoWithHandle(args) => {
-                ncp::filesystem::process_request_22_21_get_volume_info_with_handle(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_22_21_get_volume_info_with_handle(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::DeallocateDirectoryHandle(args) => {
                 ncp::filesystem::process_request_22_20_deallocate_dir_handle(conn, &args, &mut reply)
             },
             ncp::parser::Request::AllocateTemporaryDirectoryHandle(args) => {
-                ncp::filesystem::process_request_22_19_allocate_temp_dir_handle(conn, &self.config, &args, &mut reply)
+                ncp::filesystem::process_request_22_19_allocate_temp_dir_handle(conn, &self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::AllocatePermanentDirectoryHandle(args) => {
-                ncp::filesystem::process_request_22_18_allocate_perm_dir_handle(conn, &self.config, &args, &mut reply)
+                ncp::filesystem::process_request_22_18_allocate_perm_dir_handle(conn, &self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::GetDirectoryPath(args) => {
                 ncp::filesystem::process_request_22_1_get_directory_path(conn, &args, &mut reply)
             },
             ncp::parser::Request::OpenFile(args) => {
-                ncp::filesystem::process_request_76_open_file(conn, &self.config, &args, &mut reply)
+                ncp::filesystem::process_request_76_open_file(conn, &self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::ReadFromFile(args) => {
                 ncp::filesystem::process_request_72_read_from_file(conn, &args, &mut reply)
@@ -234,7 +249,7 @@ impl<'a> NcpService<'a> {
                 ncp::filesystem::process_request_66_close_file(conn, &args, &mut reply)
             },
             ncp::parser::Request::SearchForFile(args) => {
-                ncp::filesystem::process_request_64_search_for_file(conn, &self.config, &args, &mut reply)
+                ncp::filesystem::process_request_64_search_for_file(conn, &self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::LockPhysicalRecordOld(args) => {
                 ncp::sync::process_request_26_lock_physical_record_old(conn, &args, &mut reply)
@@ -303,25 +318,25 @@ impl<'a> NcpService<'a> {
                 ncp::bindery::process_request_23_51_delete_bindery_object(conn, &mut self.bindery, &args, &mut reply)
             },
             ncp::parser::Request::CreateDirectory(args) => {
-                ncp::filesystem::process_request_22_10_create_directory(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_22_10_create_directory(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::DeleteDirectory(args) => {
-                ncp::filesystem::process_request_22_11_delete_directory(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_22_11_delete_directory(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::DownFileServer(args) => {
                 ncp::server::process_request_23_211_down_file_server(conn, &args, &mut reply)
             }
             ncp::parser::Request::GetVolumeInfoWithNumber(args) => {
-                ncp::filesystem::process_request_18_get_volume_info_with_number(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_18_get_volume_info_with_number(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::CreateFile(args) => {
-                ncp::filesystem::process_request_67_create_file(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_67_create_file(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::WriteToFile(args) => {
                 ncp::filesystem::process_request_73_write_to_file(conn, &args, &mut reply)
             },
             ncp::parser::Request::EraseFile(args) => {
-                ncp::filesystem::process_request_68_erase_file(conn, self.config, &args, &mut reply)
+                ncp::filesystem::process_request_68_erase_file(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
         };
         self.send(dest, result, &mut reply);

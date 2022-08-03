@@ -12,7 +12,7 @@ use rand::Rng;
 
 use std::convert::TryInto;
 use std::io::Read;
-use byteorder::{ByteOrder, ReadBytesExt, BigEndian, LittleEndian};
+use byteorder::{ByteOrder, ReadBytesExt, BigEndian};
 use pnet::packet::PrimitiveValues;
 
 pub type LeU32 = u32;

@@ -11,6 +11,9 @@ use crate::handle;
 use crate::error::NetWareError;
 use crate::config;
 
+use byteorder::{ByteOrder, BigEndian};
+use log::*;
+
 pub struct Connection<'a> {
     pub dest: IpxAddr,
     dir_handle: [ handle::DirectoryHandle<'a>; consts::MAX_DIR_HANDLES ],
@@ -20,6 +23,7 @@ pub struct Connection<'a> {
     pub login_key: Option<LoginKey>,
     pub logged_in_object_id: bindery::ObjectID,
     pub bindery_security: bindery::Security,
+    security_equals_ids: [ bindery::ObjectID; consts::MAX_SECURITY_EQUALS_IDS ],
 }
 
 impl<'a> Connection<'a> {
@@ -33,11 +37,16 @@ impl<'a> Connection<'a> {
         let file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
         let logged_in_object_id = 0;
         let bindery_security = 0;
-        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle, login_key: None, logged_in_object_id, bindery_security }
+        let security_equals_ids = [ bindery::ID_EMPTY; consts::MAX_SECURITY_EQUALS_IDS ];
+        Connection{ dest: IpxAddr::zero(), dir_handle, search_handle, next_search_handle, file_handle, login_key: None, logged_in_object_id, bindery_security, security_equals_ids }
     }
 
     pub fn is_logged_on(&self) -> bool {
         self.logged_in_object_id != bindery::ID_NOT_LOGGED_IN
+    }
+
+    pub fn get_security_equivalent_ids(&self) -> &[ bindery::ObjectID; consts::MAX_SECURITY_EQUALS_IDS] {
+        &self.security_equals_ids
     }
 
     pub fn allocate(config: &'a config::Configuration, dest: &IpxAddr) -> Self {
@@ -51,6 +60,8 @@ impl<'a> Connection<'a> {
         self.login_key = None;
         self.logged_in_object_id = bindery::ID_NOT_LOGGED_IN;
         self.bindery_security = bindery::SECURITY_NOT_LOGGED_IN;
+        self.security_equals_ids = [ bindery::ID_EMPTY; consts::MAX_SECURITY_EQUALS_IDS ];
+        self.security_equals_ids[0] = bindery::ID_NOT_LOGGED_IN;
 
         // Reset all directory handles
         const INIT_DIR_HANDLE: handle::DirectoryHandle = handle::DirectoryHandle::zero();
@@ -70,6 +81,38 @@ impl<'a> Connection<'a> {
         let dh = dh.unwrap();
         assert!(dh.0 == 1); // must be first directory handle
         dh.1.path = MaxBoundedString::from_str(config.get_login_root());
+    }
+
+    pub fn login(&mut self, bindery: &mut bindery::Bindery, object_id: bindery::ObjectID) {
+        self.logged_in_object_id = object_id;
+        self.security_equals_ids = [ bindery::ID_EMPTY; consts::MAX_SECURITY_EQUALS_IDS ];
+        self.security_equals_ids[0] = object_id;
+
+        let object = bindery.get_object_by_id(object_id).expect("cannot find object?");
+        if let Ok(security_equals) = object.get_property_by_name("SECURITY_EQUALS") {
+            // XXX This only handles the first property segment
+            let mut n = 1;
+            if let Some(value) = security_equals.get_segment(0) {
+                for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
+                    let buf = &mut value[offset..offset + 4];
+                    let value_id = BigEndian::read_u32(buf);
+                    if value_id != bindery::ID_EMPTY {
+                        if n < consts::MAX_SECURITY_EQUALS_IDS {
+                            self.security_equals_ids[n] = value_id;
+                            n += 1;
+                        } else {
+                            warn!("ignoring security equivalence, out of items!");
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(_) = self.security_equals_ids.iter().find(|id| **id == bindery::ID_SUPERVISOR) {
+            self.bindery_security = 0x33;
+        } else {
+            self.bindery_security = 0x22;
+        }
     }
 
     pub fn in_use(&self) -> bool {

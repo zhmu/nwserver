@@ -94,8 +94,7 @@ pub fn process_request_23_24_keyed_object_login<'a>(conn: &mut connection::Conne
     let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
     if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
 
-    conn.logged_in_object_id = object.id;
-    // XXX hardcodes to supervisor
-    conn.bindery_security = 0x33;
+    let object_id = object.id;
+    conn.login(bindery, object_id);
     Ok(())
 }

@@ -4,11 +4,13 @@
  * Copyright (c) 2022 Rink Springer <rink@rink.nu>
  * For conditions of distribution and use, see LICENSE file
  */
+use crate::bindery;
 use crate::connection;
 use crate::config;
 use crate::consts;
 use super::parser;
 use crate::handle;
+use crate::trustee;
 use crate::types::*;
 use crate::error::*;
 use crate::ncp_service::NcpReplyPacket;
@@ -19,6 +21,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::fs::File;
 use std::path::Path;
 use std::time::SystemTime;
+
+use log::*;
 
 const _SA_HIDDEN: u8 = 0x02;
 const _SA_SYSTEM: u8 = 0x04;
@@ -33,9 +37,9 @@ const _ATTR_ARCHIVE: u8 = 0x20;
 const _ATTR_EXECUTE_CONFIRM: u8 = 0x40;
 const _ATTR_SHAREABLE: u8 = 0x80;
 
-fn combine_paths(dir1: &str, dir2: &str, dir3: &str) -> String {
+fn combine_paths(dir1: &str, dir2: &str) -> String {
     let mut result = String::new();
-    for d in &[ dir1, dir2, dir3 ] {
+    for d in &[ dir1, dir2 ] {
         let d = d.trim_start_matches(|c: char| { c == '\\' } );
 
         if d.is_empty() { continue; }
@@ -47,16 +51,32 @@ fn combine_paths(dir1: &str, dir2: &str, dir3: &str) -> String {
 
 struct NetWarePath {
     volume: u8,
-    writeable: bool,
     volume_path: String,
     local_path: String,
+    rights: u16,
+}
+
+fn get_rights(conn: &connection::Connection, trustee_db: &trustee::TrusteeDB, trustee_path: &str) -> u16 {
+    for id in conn.get_security_equivalent_ids() {
+        if *id == bindery::ID_EMPTY { continue; }
+        if let Some(tp) = trustee_db.find_trustees_for_path(&trustee_path) {
+            for trustee in &tp.trustees {
+                if trustee.object_id == *id {
+                    return trustee.rights;
+                }
+            }
+        }
+    }
+    info!("path '{}' for object id {} not found in trustee db, denying access!", trustee_path, conn.logged_in_object_id);
+    0
 }
 
 impl NetWarePath {
-    pub fn new(conn: &connection::Connection, config: &config::Configuration, dh: u8, path: &MaxBoundedString) -> Result<Self, NetWareError> {
+    pub fn new(conn: &connection::Connection, config: &config::Configuration, trustee_db: &trustee::TrusteeDB, dh: u8, path: &MaxBoundedString) -> Result<Self, NetWareError> {
         let volume;
         let local_path;
         let volume_path;
+        let volume_name;
         if dh == 0 {
             // No directory handle supplied; this means we need to seperate path into VOL:PATH
             let path = path.as_str();
@@ -66,15 +86,26 @@ impl NetWarePath {
 
             volume = config.get_volumes().get_volume_by_name(&path[0..colon])?;
             volume_path = path[colon + 1..].to_string();
-            local_path = combine_paths(&volume.path, &volume_path, "");
+            volume_name = volume.name.to_string();
+            local_path = combine_paths(&volume.path, &volume_path);
+
         } else {
             // Base the path on the supplied directory handle
             let dh = conn.get_dir_handle(dh)?;
             volume = dh.volume.unwrap();
-            volume_path = path.to_string();
-            local_path = combine_paths(&volume.path, dh.path.as_str(), &volume_path);
+            volume_path = combine_paths(dh.path.as_str(), &path.to_string());
+            volume_name = volume.name.to_string();
+            local_path = combine_paths(&volume.path, &volume_path);
         }
-        Ok(NetWarePath{ volume: volume.number, volume_path, local_path, writeable: volume.writeable })
+
+        let trustee_path = format!("{}:{}", volume_name, volume_path);
+        let mut rights = get_rights(conn, trustee_db, &trustee_path);
+        if !volume.writeable {
+            // Revoke rights if non-writable volume
+            rights = rights & !(trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY);
+        }
+
+        Ok(NetWarePath{ volume: volume.number, volume_path, local_path, rights })
     }
 
     // Yields the index of the volume, i.e. 0 for SYS
@@ -93,11 +124,7 @@ impl NetWarePath {
     }
 
     pub fn get_access_rights(&self) -> u8 {
-        0xff // TODO
-    }
-
-    pub fn is_writeable(&self) -> bool {
-        self.writeable
+        (self.rights & 0xff) as u8
     }
 }
 
@@ -145,8 +172,8 @@ fn stream_file_times(md: &std::fs::Metadata, reply: &mut NcpReplyPacket) {
     reply.add_u16(update_time);
 }
 
-pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.handle, &args.path)?;
+pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.handle, &args.path)?;
     let contents = retrieve_directory_contents(nw_path.get_local_path())?;
 
     // XXX verify existance, access etc
@@ -220,8 +247,8 @@ pub fn process_request_63_file_search_continue(conn: &mut connection::Connection
     Err(NetWareError::NoFilesFound)
 }
 
-pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.directory_path)?;
+pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::GetEffectiveDirectoryRights, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.directory_path)?;
     let md = std::fs::metadata(nw_path.get_local_path());
     if md.is_err() || !md.unwrap().file_type().is_dir() {
         return Err(NetWareError::InvalidPath);
@@ -254,12 +281,12 @@ fn add_volume_info(config: &config::Configuration, volume_number: u8, reply: &mu
     Ok(())
 }
 
-pub fn process_request_22_21_get_volume_info_with_handle<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &MaxBoundedString::empty())?;
+pub fn process_request_22_21_get_volume_info_with_handle<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::GetVolumeInfoWithHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &MaxBoundedString::empty())?;
     add_volume_info(config, nw_path.get_volume_index(), reply)
 }
 
-pub fn process_request_18_get_volume_info_with_number<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::GetVolumeInfoWithNumber, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_18_get_volume_info_with_number<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::GetVolumeInfoWithNumber, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     add_volume_info(config, args.volume_number, reply)
 }
 
@@ -269,9 +296,9 @@ pub fn process_request_22_20_deallocate_dir_handle(conn: &mut connection::Connec
     Ok(())
 }
 
-pub fn process_request_22_19_allocate_temp_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_22_19_allocate_temp_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::AllocateTemporaryDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     // Construct destination path and ensure it exists
-    let nw_path = NetWarePath::new(conn, config, args.source_directory_handle, &args.directory_path)?;
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.source_directory_handle, &args.directory_path)?;
     let md = std::fs::metadata(&nw_path.get_local_path());
     if md.is_err() || !md.unwrap().is_dir() {
         return Err(NetWareError::InvalidPath);
@@ -286,11 +313,11 @@ pub fn process_request_22_19_allocate_temp_dir_handle<'a>(conn: &mut connection:
     Ok(())
 }
 
-pub fn process_request_22_18_allocate_perm_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::AllocatePermanentDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_22_18_allocate_perm_dir_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::AllocatePermanentDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     // TODO check is handle_name exists and overwrite it if needed?
 
     // Construct destination path and ensure it exists
-    let nw_path = NetWarePath::new(conn, config, args.source_directory_handle, &args.directory_path)?;
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.source_directory_handle, &args.directory_path)?;
     let md = std::fs::metadata(&nw_path.get_local_path());
     if md.is_err() || !md.unwrap().is_dir() {
         return Err(NetWareError::InvalidPath);
@@ -317,14 +344,14 @@ pub fn process_request_22_1_get_directory_path<'a>(conn: &mut connection::Connec
     Ok(())
 }
 
-pub fn process_request_76_open_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.filename)?;
+pub fn process_request_76_open_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::OpenFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.filename)?;
 
     let filename = extract_filename_from(nw_path.get_local_path())?;
     if let Ok(f) = File::open(nw_path.get_local_path()) {
         let md = f.metadata()?;
         let (fh_index, fh) = conn.allocate_file_handle(f)?;
-        fh.writable = nw_path.is_writeable();
+        fh.writable = (nw_path.rights & trustee::RIGHT_WRITE) != 0;
         let ncp_fh = NcpFileHandle::new(fh_index);
         ncp_fh.to(reply);
         reply.add_u16(0); // reserved
@@ -360,9 +387,9 @@ pub fn process_request_66_close_file(conn: &mut connection::Connection, args: &p
     Ok(())
 }
 
-pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::SearchForFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::SearchForFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let (path, filename) = split_path(&args.filename);
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &path)?;
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &path)?;
     let entries = retrieve_directory_contents(nw_path.get_local_path())?;
 
     let mut index = args.last_search_index as usize;
@@ -393,9 +420,9 @@ pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection,
     Err(NetWareError::NoFilesFound)
 }
 
-pub fn process_request_22_10_create_directory<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::CreateDirectory, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.path)?;
-    if !nw_path.is_writeable() {
+pub fn process_request_22_10_create_directory<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::CreateDirectory, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
+    if (nw_path.rights & trustee::RIGHT_CREATE) == 0 {
         return Err(NetWareError::NoCreatePrivileges)
     }
 
@@ -405,9 +432,9 @@ pub fn process_request_22_10_create_directory<'a>(conn: &mut connection::Connect
     }
 }
 
-pub fn process_request_22_11_delete_directory<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::DeleteDirectory, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.path)?;
-    if !nw_path.is_writeable() {
+pub fn process_request_22_11_delete_directory<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::DeleteDirectory, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
+    if (nw_path.rights & trustee::RIGHT_ERASE) == 0 {
         return Err(NetWareError::NoDeletePrivileges)
     }
 
@@ -417,9 +444,9 @@ pub fn process_request_22_11_delete_directory<'a>(conn: &mut connection::Connect
     }
 }
 
-pub fn process_request_67_create_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::CreateFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &args.filename)?;
-    if !nw_path.is_writeable() {
+pub fn process_request_67_create_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::CreateFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.filename)?;
+    if (nw_path.rights & trustee::RIGHT_CREATE) == 0 {
         return Err(NetWareError::NoCreatePrivileges)
     }
 
@@ -484,10 +511,10 @@ pub fn process_request_73_write_to_file(conn: &mut connection::Connection, args:
     Ok(())
 }
 
-pub fn process_request_68_erase_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, args: &parser::EraseFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_68_erase_file<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::EraseFile, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let (path, filename) = split_path(&args.filename);
-    let nw_path = NetWarePath::new(conn, config, args.directory_handle, &path)?;
-    if !nw_path.is_writeable() {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &path)?;
+    if (nw_path.rights & trustee::RIGHT_ERASE) == 0 {
         return Err(NetWareError::NoDeletePrivileges)
     }
 
