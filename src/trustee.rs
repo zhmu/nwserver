@@ -6,9 +6,11 @@
  */
 
 use crate::bindery;
+use log::*;
 
 type Rights = u16;
 
+pub const RIGHT_NONE: Rights = 0;
 pub const RIGHT_READ: Rights = 0x1;
 pub const RIGHT_WRITE: Rights = 0x2;
 pub const RIGHT_OPEN: Rights = 0x4; // open existing files in directory
@@ -65,8 +67,13 @@ impl TrusteeDB {
         for p in &self.entries {
             if !path.starts_with(&p.path) { continue; }
 
-            if let Some(extra_char) = path.chars().nth(p.path.len()) {
-                if extra_char != '/' as char { continue; }
+            if p.path.ends_with(':') {
+                // Volume root path
+            } else {
+                if let Some(extra_char) = path.chars().nth(p.path.len()) {
+                    println!("extra_char '{}'", extra_char);
+                    if extra_char != '/' as char { continue; }
+                }
             }
             if let Some(result) = result {
                 if result.path.len() > p.path.len() { continue; }
@@ -75,6 +82,35 @@ impl TrusteeDB {
         }
         result
     }
+
+    pub fn get_path_trustees(&self, path: &str) -> Option<&TrusteePath> {
+        for p in &self.entries {
+            if p.path != path { continue; }
+            return Some(p);
+        }
+        println!("get_path_trustees '{}' not found", path);
+        None
+    }
+
+    pub fn determine_rights(&self, security_object_ids: &[ bindery::ObjectID ], trustee_path: &str) -> u16 {
+        let mut rights: u16 = 0;
+        for id in security_object_ids {
+            if *id == bindery::ID_EMPTY { continue; }
+            if let Some(tp) = self.find_trustees_for_path(&trustee_path) {
+                for trustee in &tp.trustees {
+                    if trustee.object_id == *id {
+                        rights = trustee.rights;
+                        if (rights & RIGHT_SUPERVISOR) != 0 {
+                            info!("short-circuiting path '{}' for object id {} due to supervisor rights", trustee_path, security_object_ids.first().unwrap_or(&0));
+                            return rights;
+                        }
+                    }
+                }
+            }
+        }
+        rights
+    }
+
 }
 
 #[cfg(test)]
@@ -90,8 +126,8 @@ mod tests {
     #[test]
     fn direct_path_lookup_succeeds() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 123, rights: 456 });
-        let tp = trustees_db.find_trustees_for_path("FOO").unwrap();
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 123, rights: 456 });
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO").unwrap();
         let t = tp.trustees.first().unwrap();
         assert_eq!(t.object_id, 123);
         assert_eq!(t.rights, 456);
@@ -100,15 +136,15 @@ mod tests {
     #[test]
     fn path_lookup_ignores_nonmatches() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 123, rights: 456 });
-        assert!(trustees_db.find_trustees_for_path("F").is_none());
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 123, rights: 456 });
+        assert!(trustees_db.find_trustees_for_path("SYS:F").is_none());
     }
 
     #[test]
     fn path_lookup_finds_parent() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 123, rights: 456 });
-        let tp = trustees_db.find_trustees_for_path("FOO/BAR").unwrap();
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 123, rights: 456 });
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO/BAR").unwrap();
         let t = tp.trustees.first().unwrap();
         assert_eq!(t.object_id, 123);
         assert_eq!(t.rights, 456);
@@ -117,33 +153,43 @@ mod tests {
     #[test]
     fn path_lookup_finds_closest_parent() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 1, rights: 10 });
-        trustees_db.add_trustee_for_path("FOO/BAR", trustee::Trustee{ object_id: 2, rights: 20 });
-        trustees_db.add_trustee_for_path("FOO/BAR/BAZ", trustee::Trustee{ object_id: 3, rights: 30 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 1, rights: 10 });
+        trustees_db.add_trustee_for_path("SYS:FOO/BAR", trustee::Trustee{ object_id: 2, rights: 20 });
+        trustees_db.add_trustee_for_path("SYS:FOO/BAR/BAZ", trustee::Trustee{ object_id: 3, rights: 30 });
 
-        let tp = trustees_db.find_trustees_for_path("FOO/A").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO/A").unwrap();
         let t = tp.trustees.first().unwrap();
         assert_eq!(t.object_id, 1);
         assert_eq!(t.rights, 10);
 
-        let tp = trustees_db.find_trustees_for_path("FOO/BAR/Z").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO/BAR/Z").unwrap();
         let t = tp.trustees.first().unwrap();
         assert_eq!(t.object_id, 2);
         assert_eq!(t.rights, 20);
 
-        let tp = trustees_db.find_trustees_for_path("FOO/BAR/BAZ/1").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO/BAR/BAZ/1").unwrap();
         let t = tp.trustees.first().unwrap();
         assert_eq!(t.object_id, 3);
         assert_eq!(t.rights, 30);
     }
 
     #[test]
+    fn path_lookup_finds_root() {
+        let mut trustees_db = trustee::TrusteeDB::new();
+        trustees_db.add_trustee_for_path("SYS:", trustee::Trustee{ object_id: 123, rights: 456 });
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO").unwrap();
+        let t = tp.trustees.first().unwrap();
+        assert_eq!(t.object_id, 123);
+        assert_eq!(t.rights, 456);
+    }
+
+    #[test]
     fn single_path_can_contain_multiple_trustees() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 1, rights: 10 });
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 2, rights: 20 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 1, rights: 10 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 2, rights: 20 });
 
-        let tp = trustees_db.find_trustees_for_path("FOO").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO").unwrap();
         assert_eq!(tp.trustees.len(), 2);
         let first_t = &tp.trustees[0];
         assert_eq!(first_t.object_id, 1);
@@ -156,10 +202,10 @@ mod tests {
     #[test]
     fn trustee_object_rights_can_be_updated() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 1, rights: 10 });
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 1, rights: 20 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 1, rights: 10 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 1, rights: 20 });
 
-        let tp = trustees_db.find_trustees_for_path("FOO").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO").unwrap();
         let t = tp.trustees.first().unwrap();
         assert_eq!(t.object_id, 1);
         assert_eq!(t.rights, 20);
@@ -168,11 +214,11 @@ mod tests {
     #[test]
     fn updating_trustee_object_rights_does_not_change_others() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 1, rights: 10 });
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 2, rights: 20 });
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 2, rights: 100 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 1, rights: 10 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 2, rights: 20 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 2, rights: 100 });
 
-        let tp = trustees_db.find_trustees_for_path("FOO").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO").unwrap();
         assert_eq!(tp.trustees.len(), 2);
         let first_t = &tp.trustees[0];
         assert_eq!(first_t.object_id, 1);
@@ -185,21 +231,21 @@ mod tests {
     #[test]
     fn remove_trustee_with_one_entry_removes_entire_entry() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 123, rights: 456 });
-        trustees_db.remove_trustee_from_path("FOO", 123);
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 123, rights: 456 });
+        trustees_db.remove_trustee_from_path("SYS:FOO", 123);
 
-        assert!(trustees_db.find_trustees_for_path("FOO").is_none());
+        assert!(trustees_db.find_trustees_for_path("SYS:FOO").is_none());
     }
 
     #[test]
     fn remove_trustee_with_multiple_entries_removes_only_one_trustee() {
         let mut trustees_db = trustee::TrusteeDB::new();
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 1, rights: 10 });
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 2, rights: 20 });
-        trustees_db.add_trustee_for_path("FOO", trustee::Trustee{ object_id: 3, rights: 30 });
-        trustees_db.remove_trustee_from_path("FOO", 2);
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 1, rights: 10 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 2, rights: 20 });
+        trustees_db.add_trustee_for_path("SYS:FOO", trustee::Trustee{ object_id: 3, rights: 30 });
+        trustees_db.remove_trustee_from_path("SYS:FOO", 2);
 
-        let tp = trustees_db.find_trustees_for_path("FOO").unwrap();
+        let tp = trustees_db.find_trustees_for_path("SYS:FOO").unwrap();
         assert_eq!(tp.trustees.len(), 2);
         let first_t = &tp.trustees[0];
         assert_eq!(first_t.object_id, 1);

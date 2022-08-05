@@ -131,6 +131,7 @@ impl<'a> NcpService<'a> {
         trustee_db.add_trustee_for_path("SYS:LOGIN", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
         trustee_db.add_trustee_for_path("SYS:PUBLIC", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
         trustee_db.add_trustee_for_path("SYS:TEMP", trustee::Trustee{ object_id: everyone_id, rights: rwcemf });
+        trustee_db.add_trustee_for_path("SYS:MAIL", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_CREATE });
 
         NcpService{ config, tx, clients, bindery, trustee_db }
     }
@@ -346,6 +347,9 @@ impl<'a> NcpService<'a> {
             },
             ncp::parser::Request::ScanVolumeUserDiskRestrictions(args) => {
                 ncp::filesystem::process_request_22_32_scan_volume_user_disk_restrictions(conn, self.config, &args, &mut reply)
+            },
+            ncp::parser::Request::ScanFileOrDirectoryForExtendedTrustees(args) => {
+                ncp::filesystem::process_request_22_38_scan_file_or_directory_for_extended_trustees(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
         };
         self.send(dest, result, &mut reply);

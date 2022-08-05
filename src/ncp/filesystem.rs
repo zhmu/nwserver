@@ -57,18 +57,11 @@ struct NetWarePath {
 }
 
 fn get_rights(conn: &connection::Connection, trustee_db: &trustee::TrusteeDB, trustee_path: &str) -> u16 {
-    for id in conn.get_security_equivalent_ids() {
-        if *id == bindery::ID_EMPTY { continue; }
-        if let Some(tp) = trustee_db.find_trustees_for_path(&trustee_path) {
-            for trustee in &tp.trustees {
-                if trustee.object_id == *id {
-                    return trustee.rights;
-                }
-            }
-        }
+    let rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), trustee_path);
+    if rights == 0 {
+        info!("path '{}' for object id {} not found in trustee db, denying access!", trustee_path, conn.logged_in_object_id);
     }
-    info!("path '{}' for object id {} not found in trustee db, denying access!", trustee_path, conn.logged_in_object_id);
-    0
+    rights
 }
 
 impl NetWarePath {
@@ -123,6 +116,12 @@ impl NetWarePath {
     // Yields the path on the volume, i.e. LOGIN/LOGIN.EXE
     pub fn get_volume_path(&self) -> &String {
         &self.volume_path
+    }
+
+    // Yields the path used for trustees, i.e. SYS:PUBLIC
+    pub fn get_trustee_path(&self, config: &config::Configuration) -> String {
+        let volume = config.get_volumes().get_volume_by_number(self.get_volume_index() as usize).unwrap();
+        format!("{}:{}", volume.name, self.get_volume_path())
     }
 
     pub fn get_access_rights(&self) -> u16 {
@@ -545,14 +544,17 @@ pub fn process_request_22_0_set_directory_handle<'a>(conn: &mut connection::Conn
     Ok(())
 }
 
+fn swap_rights(rights: u16) -> u16 {
+    // XXX For some reason, these must be byte-swapped??
+    ((rights >> 8) & 0xff) | ((rights & 0xff) << 8)
+}
+
 pub fn process_request_22_42_get_effective_rights_for_directory_entry<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::GetEffectiveRightsForDirectoryEntry, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
 
     if let Ok(md) = std::fs::metadata(nw_path.get_local_path()) {
-        // XXX For some reason, these must be byte-swapped??
         let mut rights = nw_path.get_access_rights();
-        rights = ((rights >> 8) & 0xff) | ((rights & 0xff) << 8);
-        reply.add_u16(rights);
+        reply.add_u16(swap_rights(rights));
         return Ok(())
     }
     Err(NetWareError::InvalidPath)
@@ -564,6 +566,44 @@ pub fn process_request_22_32_scan_volume_user_disk_restrictions<'a>(conn: &mut c
     Ok(())
 }
 
+pub fn process_request_22_38_scan_file_or_directory_for_extended_trustees<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::ScanFileOrDirectoryForExtendedTrustees, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
+
+    if let Some(tp) = trustee_db.get_path_trustees(&nw_path.get_trustee_path(config)) {
+        const ENTRIES_PER_REPLY: usize = 20;
+        let mut object_ids = [ bindery::ID_EMPTY; ENTRIES_PER_REPLY ];
+        let mut rights = [ trustee::RIGHT_NONE; ENTRIES_PER_REPLY ];
+        let mut number_of_entries: u8 = 0;
+
+        let mut n = 0;
+        let amount_to_skip = (args.sequence_number as usize) * ENTRIES_PER_REPLY;
+        println!("amount_to_skip {}", amount_to_skip);
+        for trustee in &tp.trustees {
+            if n >= amount_to_skip {
+                object_ids[n - amount_to_skip] = trustee.object_id;
+                rights[n - amount_to_skip] = trustee.rights;
+                number_of_entries += 1;
+            }
+            n += 1;
+        }
+        if number_of_entries == 0 {
+            // This feels strange, but it is what the NetWare server does. If we just
+            // return zero entries, TLIST.EXE will keep requesting more
+            return Err(NetWareError::InvalidPath);
+        }
+
+        reply.add_u8(number_of_entries);
+        for object_id in &object_ids {
+            reply.add_u32(*object_id);
+        }
+        for right in &rights {
+            reply.add_u16(swap_rights(*right));
+        }
+        return Ok(());
+    } else {
+        return Err(NetWareError::InvalidPath);
+    }
+}
 
 fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {
     let mut last_slash_index: Option<usize> = None;

@@ -383,6 +383,13 @@ pub struct ScanVolumeUserDiskRestrictions {
 }
 
 #[derive(NcpPacket)]
+pub struct ScanFileOrDirectoryForExtendedTrustees {
+    pub directory_handle: u8,
+    pub sequence_number: u8,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -443,6 +450,7 @@ pub enum Request {
     SetDirectoryHandle(SetDirectoryHandle),
     GetEffectiveRightsForDirectoryEntry(GetEffectiveRightsForDirectoryEntry),
     ScanVolumeUserDiskRestrictions(ScanVolumeUserDiskRestrictions),
+    ScanFileOrDirectoryForExtendedTrustees(ScanFileOrDirectoryForExtendedTrustees),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -504,6 +512,7 @@ impl Request {
             20 => { Ok(Request::DeallocateDirectoryHandle(DeallocateDirectoryHandle::from(rdr)?)) },
             21 => { Ok(Request::GetVolumeInfoWithHandle(GetVolumeInfoWithHandle::from(rdr)?)) },
             32 => { Ok(Request::ScanVolumeUserDiskRestrictions(ScanVolumeUserDiskRestrictions::from(rdr)?)) },
+            38 => { Ok(Request::ScanFileOrDirectoryForExtendedTrustees(ScanFileOrDirectoryForExtendedTrustees::from(rdr)?)) },
             42 => { Ok(Request::GetEffectiveRightsForDirectoryEntry(GetEffectiveRightsForDirectoryEntry::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 22, sub_func)) },
         }
