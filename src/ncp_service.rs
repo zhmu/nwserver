@@ -123,13 +123,13 @@ impl<'a> NcpService<'a> {
         let mut trustee_db = trustee::TrusteeDB::new();
         info!("initialising trustee database");
 
-        let rwcemf = trustee::RIGHT_READ | trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY | trustee::RIGHT_FILESCAN;
-        trustee_db.add_trustee_for_path("SYS:", trustee::Trustee{ object_id: bindery::ID_SUPERVISOR, rights: rwcemf | trustee::RIGHT_ACCESS_CONTROL | trustee::RIGHT_SUPERVISOR });
+        let rwcemf = trustee::RIGHT_READ | trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_OPEN | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY | trustee::RIGHT_FILESCAN;
+        trustee_db.add_trustee_for_path("SYS:", trustee::Trustee{ object_id: bindery::ID_SUPERVISOR, rights: rwcemf | trustee::RIGHT_PARENTAL | trustee::RIGHT_SUPERVISOR });
         trustee_db.add_trustee_for_path("SYS:LOGIN", trustee::Trustee{ object_id: bindery::ID_NOT_LOGGED_IN, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
 
         let everyone_id = bindery.get_object_by_name(MaxBoundedString::from_str("EVERYONE"), bindery::TYPE_USER_GROUP).expect("cannot find EVERYONE group").id;
-        trustee_db.add_trustee_for_path("SYS:LOGIN", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
-        trustee_db.add_trustee_for_path("SYS:PUBLIC", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
+        trustee_db.add_trustee_for_path("SYS:LOGIN", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
+        trustee_db.add_trustee_for_path("SYS:PUBLIC", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
         trustee_db.add_trustee_for_path("SYS:TEMP", trustee::Trustee{ object_id: everyone_id, rights: rwcemf });
 
         NcpService{ config, tx, clients, bindery, trustee_db }
@@ -337,6 +337,15 @@ impl<'a> NcpService<'a> {
             },
             ncp::parser::Request::EraseFile(args) => {
                 ncp::filesystem::process_request_68_erase_file(conn, self.config, &self.trustee_db, &args, &mut reply)
+            },
+            ncp::parser::Request::SetDirectoryHandle(args) => {
+                ncp::filesystem::process_request_22_0_set_directory_handle(conn, self.config, &self.trustee_db, &args, &mut reply)
+            },
+            ncp::parser::Request::GetEffectiveRightsForDirectoryEntry(args) => {
+                ncp::filesystem::process_request_22_42_get_effective_rights_for_directory_entry(conn, self.config, &self.trustee_db, &args, &mut reply)
+            },
+            ncp::parser::Request::ScanVolumeUserDiskRestrictions(args) => {
+                ncp::filesystem::process_request_22_32_scan_volume_user_disk_restrictions(conn, self.config, &args, &mut reply)
             },
         };
         self.send(dest, result, &mut reply);

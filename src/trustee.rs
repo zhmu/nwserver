@@ -11,9 +11,10 @@ type Rights = u16;
 
 pub const RIGHT_READ: Rights = 0x1;
 pub const RIGHT_WRITE: Rights = 0x2;
+pub const RIGHT_OPEN: Rights = 0x4; // open existing files in directory
 pub const RIGHT_CREATE: Rights = 0x8;
 pub const RIGHT_ERASE: Rights = 0x10;
-pub const RIGHT_ACCESS_CONTROL: Rights = 0x20;
+pub const RIGHT_PARENTAL: Rights = 0x20; // parental rights (create/remove subdirs, make other objects trustees of this dir/subdir)
 pub const RIGHT_FILESCAN: Rights = 0x40;
 pub const RIGHT_MODIFY: Rights = 0x80;
 pub const RIGHT_SUPERVISOR: Rights = 0x100;

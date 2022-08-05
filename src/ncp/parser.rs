@@ -364,6 +364,25 @@ pub struct EraseFile {
 }
 
 #[derive(NcpPacket)]
+pub struct SetDirectoryHandle {
+    pub target_directory_handle: u8,
+    pub source_directory_handle: u8,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct GetEffectiveRightsForDirectoryEntry {
+    pub directory_handle: u8,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct ScanVolumeUserDiskRestrictions {
+    pub volume_number: u8,
+    pub sequence_number: u32,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -421,6 +440,9 @@ pub enum Request {
     CreateFile(CreateFile),
     WriteToFile(WriteToFile),
     EraseFile(EraseFile),
+    SetDirectoryHandle(SetDirectoryHandle),
+    GetEffectiveRightsForDirectoryEntry(GetEffectiveRightsForDirectoryEntry),
+    ScanVolumeUserDiskRestrictions(ScanVolumeUserDiskRestrictions),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -472,6 +494,7 @@ impl Request {
         }
 */
         return match sub_func {
+            0 => { Ok(Request::SetDirectoryHandle(SetDirectoryHandle::from(rdr)?)) },
             1 => { Ok(Request::GetDirectoryPath(GetDirectoryPath::from(rdr)?)) },
             3 => { Ok(Request::GetEffectiveDirectoryRights(GetEffectiveDirectoryRights::from(rdr)?)) },
             10 => { Ok(Request::CreateDirectory(CreateDirectory::from(rdr)?)) },
@@ -480,6 +503,8 @@ impl Request {
             19 => { Ok(Request::AllocateTemporaryDirectoryHandle(AllocateTemporaryDirectoryHandle::from(rdr)?)) },
             20 => { Ok(Request::DeallocateDirectoryHandle(DeallocateDirectoryHandle::from(rdr)?)) },
             21 => { Ok(Request::GetVolumeInfoWithHandle(GetVolumeInfoWithHandle::from(rdr)?)) },
+            32 => { Ok(Request::ScanVolumeUserDiskRestrictions(ScanVolumeUserDiskRestrictions::from(rdr)?)) },
+            42 => { Ok(Request::GetEffectiveRightsForDirectoryEntry(GetEffectiveRightsForDirectoryEntry::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 22, sub_func)) },
         }
     }
