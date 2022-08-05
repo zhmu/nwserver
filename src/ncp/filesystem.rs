@@ -56,8 +56,8 @@ struct NetWarePath {
     rights: u16,
 }
 
-fn get_rights(conn: &connection::Connection, trustee_db: &trustee::TrusteeDB, trustee_path: &str) -> u16 {
-    let rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), trustee_path);
+fn get_rights(conn: &connection::Connection, trustee_db: &trustee::TrusteeDB, volume_index: usize, trustee_path: &str) -> u16 {
+    let rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), volume_index, trustee_path);
     if rights == 0 {
         info!("path '{}' for object id {} not found in trustee db, denying access!", trustee_path, conn.logged_in_object_id);
     }
@@ -93,8 +93,7 @@ impl NetWarePath {
 
         let volume_path = volume_path.strip_prefix('/').unwrap_or(&volume_path).to_string();
 
-        let trustee_path = format!("{}:{}", volume_name, volume_path);
-        let mut rights = get_rights(conn, trustee_db, &trustee_path);
+        let mut rights = get_rights(conn, trustee_db, volume.number.into(), &volume_path);
         if !volume.writeable {
             // Revoke rights if non-writable volume
             rights = rights & !(trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY);
@@ -569,7 +568,7 @@ pub fn process_request_22_32_scan_volume_user_disk_restrictions<'a>(conn: &mut c
 pub fn process_request_22_38_scan_file_or_directory_for_extended_trustees<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::ScanFileOrDirectoryForExtendedTrustees, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
 
-    if let Some(tp) = trustee_db.get_path_trustees(&nw_path.get_trustee_path(config)) {
+    if let Some(tp) = trustee_db.get_path_trustees(nw_path.get_volume_index().into(), nw_path.get_volume_path()) {
         const ENTRIES_PER_REPLY: usize = 20;
         let mut object_ids = [ bindery::ID_EMPTY; ENTRIES_PER_REPLY ];
         let mut rights = [ trustee::RIGHT_NONE; ENTRIES_PER_REPLY ];
