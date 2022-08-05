@@ -77,12 +77,12 @@ impl NetWarePath {
         let local_path;
         let volume_path;
         let volume_name;
-        if dh == 0 {
+        if dh == handle::DH_INDEX_ABSOLUTE {
             // No directory handle supplied; this means we need to seperate path into VOL:PATH
             let path = path.as_str();
             let colon = path.find(':');
             if colon.is_none() { return Err(NetWareError::NoSuchVolume); }
-            let colon = colon.unwrap();
+            let mut colon = colon.unwrap();
 
             volume = config.get_volumes().get_volume_by_name(&path[0..colon])?;
             volume_path = path[colon + 1..].to_string();
@@ -97,6 +97,8 @@ impl NetWarePath {
             volume_name = volume.name.to_string();
             local_path = combine_paths(&volume.path, &volume_path);
         }
+
+        let volume_path = volume_path.strip_prefix('/').unwrap_or(&volume_path).to_string();
 
         let trustee_path = format!("{}:{}", volume_name, volume_path);
         let mut rights = get_rights(conn, trustee_db, &trustee_path);
@@ -123,8 +125,8 @@ impl NetWarePath {
         &self.volume_path
     }
 
-    pub fn get_access_rights(&self) -> u8 {
-        (self.rights & 0xff) as u8
+    pub fn get_access_rights(&self) -> u16 {
+        self.rights
     }
 }
 
@@ -183,7 +185,7 @@ pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection
     reply.add_u16(directory_id);
     let search_sequence_number = 0xffff;
     reply.add_u16(search_sequence_number);
-    reply.add_u8(nw_path.get_access_rights());
+    reply.add_u8((nw_path.get_access_rights() & 0xff) as u8);
     Ok(())
 }
 
@@ -253,7 +255,7 @@ pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connec
     if md.is_err() || !md.unwrap().file_type().is_dir() {
         return Err(NetWareError::InvalidPath);
     }
-    reply.add_u8(nw_path.get_access_rights());
+    reply.add_u8((nw_path.get_access_rights() & 0xff) as u8);
     Ok(())
 }
 
@@ -305,11 +307,11 @@ pub fn process_request_22_19_allocate_temp_dir_handle<'a>(conn: &mut connection:
     }
 
     // Create the new handle
-    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, nw_path.get_volume_index() as usize)?;
+    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, handle::DirectoryHandleType::Temporary, nw_path.get_volume_index() as usize)?;
     new_dh.path = MaxBoundedString::from_str(nw_path.get_volume_path());
 
     reply.add_u8(new_dh_index);
-    reply.add_u8(nw_path.get_access_rights());
+    reply.add_u8((nw_path.get_access_rights() & 0xff) as u8);
     Ok(())
 }
 
@@ -324,11 +326,11 @@ pub fn process_request_22_18_allocate_perm_dir_handle<'a>(conn: &mut connection:
     }
 
     // Create the new handle
-    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, nw_path.get_volume_index() as usize)?;
+    let (new_dh_index, new_dh) = conn.alloc_dir_handle(&config, handle::DirectoryHandleType::Permanent, nw_path.get_volume_index() as usize)?;
     new_dh.path = MaxBoundedString::from_str(nw_path.get_volume_path());
 
     reply.add_u8(new_dh_index);
-    reply.add_u8(nw_path.get_access_rights());
+    reply.add_u8((nw_path.get_access_rights() & 0xff) as u8);
     Ok(())
 }
 
@@ -529,6 +531,39 @@ pub fn process_request_68_erase_file<'a>(conn: &mut connection::Connection, conf
     }
     Ok(())
 }
+
+
+pub fn process_request_22_0_set_directory_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::SetDirectoryHandle, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.source_directory_handle, &args.path)?;
+    let dh = conn.get_mut_dir_handle(args.target_directory_handle)?;
+
+    let volume = config.get_volumes().get_volume_by_number(nw_path.get_volume_index().into())?;
+    dh.volume = Some(volume);
+    dh.path = BoundedString::from_str(nw_path.get_volume_path());
+
+    println!("22 00 '{}'", dh.path);
+    Ok(())
+}
+
+pub fn process_request_22_42_get_effective_rights_for_directory_entry<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::GetEffectiveRightsForDirectoryEntry, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
+
+    if let Ok(md) = std::fs::metadata(nw_path.get_local_path()) {
+        // XXX For some reason, these must be byte-swapped??
+        let mut rights = nw_path.get_access_rights();
+        rights = ((rights >> 8) & 0xff) | ((rights & 0xff) << 8);
+        reply.add_u16(rights);
+        return Ok(())
+    }
+    Err(NetWareError::InvalidPath)
+}
+pub fn process_request_22_32_scan_volume_user_disk_restrictions<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::ScanVolumeUserDiskRestrictions, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    // ensure volume exists
+    let _ = config.get_volumes().get_volume_by_number(args.volume_number as usize)?;
+    reply.add_u8(0);
+    Ok(())
+}
+
 
 fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {
     let mut last_slash_index: Option<usize> = None;

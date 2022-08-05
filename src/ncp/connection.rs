@@ -16,6 +16,7 @@ use crate::types::*;
 use crate::ncp_service::NcpReplyPacket;
 
 use std::convert::TryInto;
+use log::*;
 
 pub fn destroy_service_connection(conn: &mut connection::Connection, _args: &parser::DestroyServiceConnection, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     *conn = connection::Connection::zero();
@@ -34,7 +35,9 @@ pub fn process_request_97_get_big_packet_ncp_max_packet_size(_conn: &mut connect
     Err(NetWareError::UnsupportedRequest)
 }
 
-pub fn process_request_24_end_of_job(_conn: &mut connection::Connection, _args: &parser::EndOfJob, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_24_end_of_job(conn: &mut connection::Connection, _args: &parser::EndOfJob, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let num_dh_freed = conn.free_temp_dir_handles();
+    info!("freed {} temporary directory handles", num_dh_freed);
     Ok(())
 }
 

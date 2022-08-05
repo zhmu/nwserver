@@ -76,11 +76,12 @@ impl<'a> Connection<'a> {
         const INIT_FILE_HANDLE: handle::FileHandle = handle::FileHandle::zero();
         self.file_handle = [ INIT_FILE_HANDLE; consts::MAX_OPEN_FILES ];
 
-        // Allocate a single directory handle
-        let dh = self.alloc_dir_handle(config, config.get_login_volume() as usize);
-        let dh = dh.unwrap();
-        assert!(dh.0 == 1); // must be first directory handle
-        dh.1.path = MaxBoundedString::from_str(config.get_login_root());
+        // Set up the login directory handle; it is special as it will never be
+        let login_dh = &mut self.dir_handle[(handle::DH_INDEX_LOGIN - 1) as usize];
+        let volume = config.get_volumes().get_volume_by_number(config.get_login_volume() as usize).expect("login volume not found");
+        login_dh.volume = Some(volume);
+        login_dh.typ = handle::DirectoryHandleType::Permanent;
+        login_dh.path = MaxBoundedString::from_str(config.get_login_root());
     }
 
     pub fn login(&mut self, bindery: &mut bindery::Bindery, object_id: bindery::ObjectID) {
@@ -119,13 +120,28 @@ impl<'a> Connection<'a> {
         !self.dest.is_zero()
     }
 
-    pub fn alloc_dir_handle(&mut self, config: &'a config::Configuration, volume_index: usize) -> Result<(u8, &mut handle::DirectoryHandle<'a>), NetWareError> {
+    pub fn free_temp_dir_handles(&mut self) -> usize {
+        let mut num_freed = 0;
         for (n, dh) in self.dir_handle.iter_mut().enumerate() {
+            if dh.is_available() { continue; }
+            if dh.typ != handle::DirectoryHandleType::Temporary { continue; }
+
+            *dh = handle::DirectoryHandle::zero();
+            num_freed += 1;
+        }
+        num_freed
+    }
+
+    pub fn alloc_dir_handle(&mut self, config: &'a config::Configuration, typ: handle::DirectoryHandleType, volume_index: usize) -> Result<(u8, &mut handle::DirectoryHandle<'a>), NetWareError> {
+        for (n, dh) in self.dir_handle.iter_mut().enumerate() {
+            // Never allocate the login directory handle
+            if n == (handle::DH_INDEX_LOGIN - 1) as usize { continue; }
             if !dh.is_available() { continue; }
 
             *dh = handle::DirectoryHandle::zero();
             let volume = config.get_volumes().get_volume_by_number(volume_index)?;
             dh.volume = Some(volume);
+            dh.typ = typ;
             return Ok(((n + 1) as u8, dh))
         }
         Err(NetWareError::NoDirectoryHandlesLeft)

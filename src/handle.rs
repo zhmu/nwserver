@@ -23,15 +23,29 @@ impl FileHandle {
     }
 }
 
+#[derive(PartialEq)]
+pub enum DirectoryHandleType {
+    Invalid,
+    Permanent,
+    Temporary,
+}
+
+// Directory handle 0 indicates a full path (VOL:PATH) is to be used
+// Directory handle 1 is special and used for the SYS:LOGIN (or equivalent) path
+
+pub const DH_INDEX_ABSOLUTE: u8 = 0;
+pub const DH_INDEX_LOGIN: u8 = 1;
+
 pub struct DirectoryHandle<'a> {
     pub volume: Option<&'a config::Volume>,
     pub path: MaxBoundedString,
+    pub typ: DirectoryHandleType,
 }
 
 impl<'a> DirectoryHandle<'a> {
     pub const fn zero() -> Self {
         let path = MaxBoundedString::empty();
-        Self{ volume: None, path }
+        Self{ volume: None, path, typ: DirectoryHandleType::Invalid }
     }
 
     pub fn is_available(&self) -> bool {
