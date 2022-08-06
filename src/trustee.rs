@@ -136,6 +136,20 @@ impl TrusteeDB {
         rights
     }
 
+    pub fn get_indexed_trustee_by_object_id(&self, object_id: bindery::ObjectID, volume_index: usize, sequence: u16) -> Option<(&str, &Trustee)> {
+        let volume_entries = self.entries.get(volume_index)?;
+        let mut current_sequence: u16 = 0;
+        for p in volume_entries {
+            for tp in &p.trustees {
+                if tp.object_id != object_id { continue; }
+                if current_sequence == sequence {
+                    return Some((&p.path, tp))
+                }
+                current_sequence += 1;
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

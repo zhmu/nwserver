@@ -56,14 +56,6 @@ struct NetWarePath {
     rights: u16,
 }
 
-fn get_rights(conn: &connection::Connection, trustee_db: &trustee::TrusteeDB, volume_index: usize, trustee_path: &str) -> u16 {
-    let rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), volume_index, trustee_path);
-    if rights == 0 {
-        info!("path '{}' for object id {} not found in trustee db, denying access!", trustee_path, conn.logged_in_object_id);
-    }
-    rights
-}
-
 impl NetWarePath {
     pub fn new(conn: &connection::Connection, config: &config::Configuration, trustee_db: &trustee::TrusteeDB, dh: u8, path: &MaxBoundedString) -> Result<Self, NetWareError> {
         let volume;
@@ -93,7 +85,7 @@ impl NetWarePath {
 
         let volume_path = volume_path.strip_prefix('/').unwrap_or(&volume_path).to_string();
 
-        let mut rights = get_rights(conn, trustee_db, volume.number.into(), &volume_path);
+        let mut rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), volume.number.into(), &volume_path);
         if !volume.writeable {
             // Revoke rights if non-writable volume
             rights = rights & !(trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY);
@@ -115,12 +107,6 @@ impl NetWarePath {
     // Yields the path on the volume, i.e. LOGIN/LOGIN.EXE
     pub fn get_volume_path(&self) -> &String {
         &self.volume_path
-    }
-
-    // Yields the path used for trustees, i.e. SYS:PUBLIC
-    pub fn get_trustee_path(&self, config: &config::Configuration) -> String {
-        let volume = config.get_volumes().get_volume_by_number(self.get_volume_index() as usize).unwrap();
-        format!("{}:{}", volume.name, self.get_volume_path())
     }
 
     pub fn get_access_rights(&self) -> u16 {
@@ -172,6 +158,20 @@ fn stream_file_times(md: &std::fs::Metadata, reply: &mut NcpReplyPacket) {
     reply.add_u16(update_time);
 }
 
+fn stream_creation_date_and_time(md: &std::fs::Metadata, reply: &mut NcpReplyPacket) {
+    let creation_date;
+    let creation_time;
+    if let Ok(st) = md.created() {
+        creation_date = system_time_to_date(&st);
+        creation_time = system_time_to_time(&st);
+    } else {
+        creation_date = 0;
+        creation_time = 0;
+    }
+    reply.add_u16(creation_date);
+    reply.add_u16(creation_time);
+}
+
 pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::FileSearchInit, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let nw_path = NetWarePath::new(conn, config, trustee_db, args.handle, &args.path)?;
     let contents = retrieve_directory_contents(nw_path.get_local_path())?;
@@ -213,17 +213,7 @@ pub fn process_request_63_file_search_continue(conn: &mut connection::Connection
                             let attr = ATTR_SUBDIRECTORY;
                             reply.add_u8(attr); // directory attributes
                             reply.add_u8(0xff); // directory access rights
-                            let creation_date;
-                            let creation_time;
-                            if let Ok(st) = md.created() {
-                                creation_date = system_time_to_date(&st);
-                                creation_time = system_time_to_time(&st);
-                            } else {
-                                creation_date = 0;
-                                creation_time = 0;
-                            }
-                            reply.add_u16(creation_date);
-                            reply.add_u16(creation_time);
+                            stream_creation_date_and_time(&md, reply);
                             reply.add_u32(0); // owner id
                             reply.add_u16(0); // reserved
                             reply.add_u16(0xd1d1); // directory magic
@@ -538,8 +528,6 @@ pub fn process_request_22_0_set_directory_handle<'a>(conn: &mut connection::Conn
     let volume = config.get_volumes().get_volume_by_number(nw_path.get_volume_index().into())?;
     dh.volume = Some(volume);
     dh.path = BoundedString::from_str(nw_path.get_volume_path());
-
-    println!("22 00 '{}'", dh.path);
     Ok(())
 }
 
@@ -576,7 +564,6 @@ pub fn process_request_22_38_scan_file_or_directory_for_extended_trustees<'a>(co
 
         let mut n = 0;
         let amount_to_skip = (args.sequence_number as usize) * ENTRIES_PER_REPLY;
-        println!("amount_to_skip {}", amount_to_skip);
         for trustee in &tp.trustees {
             if n >= amount_to_skip {
                 object_ids[n - amount_to_skip] = trustee.object_id;
@@ -604,6 +591,42 @@ pub fn process_request_22_38_scan_file_or_directory_for_extended_trustees<'a>(co
     }
 }
 
+pub fn process_request_22_2_scan_directory_information<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::ScanDirectoryInformation, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let (path, filename) = split_path(&args.path);
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &path)?;
+    let entries = retrieve_directory_contents(nw_path.get_local_path())?;
+
+    let mut index = if args.starting_search_number > 0 { (args.starting_search_number - 1) as usize } else { 0 };
+    while index < entries.len() {
+        let entry = entries[index];
+        index += 1;
+
+        if !entry.matches(&filename.data()) { continue; }
+
+        // XXX verify match, etc.
+        let p = format!("{}/{}", nw_path.get_local_path(), entry);
+        if let Ok(md) = std::fs::metadata(&p) {
+            if md.file_type().is_dir() {
+                entry.to(reply); // file name
+                stream_creation_date_and_time(&md, reply);
+                reply.add_u32(bindery::ID_SUPERVISOR); // owner trustee id
+                reply.add_u8(0xff); // TODO rights
+                reply.add_u8(0); // reserved
+                reply.add_u16((index + 1).try_into().unwrap()); // next search number
+                return Ok(())
+            }
+        }
+    }
+    Err(NetWareError::NoMoreDirectoryEntries)
+}
+
+pub fn process_request_22_6_get_volume_name<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, args: &parser::GetVolumeName, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    // ensure volume exists
+    let volume = config.get_volumes().get_volume_by_number(args.volume_number as usize)?;
+    volume.name.to(reply);
+    Ok(())
+}
+
 fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {
     let mut last_slash_index: Option<usize> = None;
     for index in 0..path.len() {
@@ -614,7 +637,6 @@ fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {
     last_slash_index
 }
 
-// Takes FOO/BAR/BAZ.TXT, returns ("FOO/BAR", "BAZ.TXT")
 fn split_path(path: &MaxBoundedString) -> (MaxBoundedString, MaxBoundedString) {
     if let Some(n) = find_last_slash(path) {
         let data = path.data();
@@ -622,6 +644,14 @@ fn split_path(path: &MaxBoundedString) -> (MaxBoundedString, MaxBoundedString) {
         let filename = MaxBoundedString::from_slice(&data[n + 1..]);
         return (path, filename)
     }
+
+    if let Some(n) = path.data().iter().position(|c| *c == 0x3a /* : */) {
+        let data = path.data();
+        let path = MaxBoundedString::from_slice(&data[0..n + 1]);
+        let filename = MaxBoundedString::from_slice(&data[n + 1..]);
+        return (path, filename)
+    }
+
     return (MaxBoundedString::empty(), *path)
 }
 
@@ -633,4 +663,24 @@ fn extract_filename_from(path: &str) -> Result<DosFileName, NetWareError> {
         p = &path;
     }
     DosFileName::from_str(p).ok_or(NetWareError::InvalidPath)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::ncp::filesystem::*;
+
+    #[test]
+    fn split_path_1_without_volume() {
+        let (path, filename) = split_path(&MaxBoundedString::from_str("FOO\\BAR\\BAZ.TXT"));
+        assert_eq!(path.as_str(), "FOO\\BAR");
+        assert_eq!(filename.as_str(), "BAZ.TXT");
+    }
+
+    #[test]
+    fn split_path_with_volume() {
+        let (path, filename) = split_path(&MaxBoundedString::from_str("SYS:FOO"));
+        assert_eq!(path.as_str(), "SYS:");
+        assert_eq!(filename.as_str(), "FOO");
+    }
 }

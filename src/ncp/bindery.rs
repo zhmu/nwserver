@@ -6,10 +6,12 @@
  */
 use crate::bindery;
 use crate::connection;
+use crate::config;
 use crate::crypto;
 use crate::error::*;
 use crate::types::*;
 use super::parser;
+use crate::trustee;
 use crate::ncp_service::NcpReplyPacket;
 
 use std::convert::TryInto;
@@ -204,3 +206,27 @@ pub fn process_request_23_51_delete_bindery_object(_conn: &mut connection::Conne
     bindery.delete_object_by_id(object_id)?;
     Ok(())
 }
+
+pub fn process_request_23_71_scan_bindery_object_trustee_path<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::ScanBinderyObjectTrusteePath, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let volume = config.get_volumes().get_volume_by_number(args.volume_number as usize)?;
+    let sequence = if args.last_sequence_number == 0xffff { 0 } else { args.last_sequence_number };
+
+    let object_id;
+    let access_mask;
+    let path;
+    if let Some((trustee_path, trustee)) = trustee_db.get_indexed_trustee_by_object_id(args.object_id, volume.number as usize, sequence) {
+        object_id = trustee.object_id;
+        access_mask = trustee.rights & 0xff;
+        path = MaxBoundedString::from_str(&format!("{}:{}", volume.name, trustee_path).to_string());
+    } else {
+        object_id = bindery::ID_EMPTY;
+        access_mask = 0;
+        path = MaxBoundedString::empty();
+    }
+    reply.add_u16(sequence.wrapping_add(1));
+    reply.add_u32(object_id);
+    reply.add_u8((access_mask & 0xff) as u8);
+    path.to(reply);
+    Ok(())
+}
+

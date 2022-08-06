@@ -354,6 +354,15 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::ScanFileOrDirectoryForExtendedTrustees(args) => {
                 ncp::filesystem::process_request_22_38_scan_file_or_directory_for_extended_trustees(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
+            ncp::parser::Request::GetVolumeName(args) => {
+                ncp::filesystem::process_request_22_6_get_volume_name(conn, self.config, &args, &mut reply)
+            },
+            ncp::parser::Request::ScanBinderyObjectTrusteePath(args) => {
+                ncp::bindery::process_request_23_71_scan_bindery_object_trustee_path(conn, self.config, &self.trustee_db, &args, &mut reply)
+            },
+            ncp::parser::Request::ScanDirectoryInformation(args) => {
+                ncp::filesystem::process_request_22_2_scan_directory_information(conn, self.config, &self.trustee_db, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

@@ -390,6 +390,25 @@ pub struct ScanFileOrDirectoryForExtendedTrustees {
 }
 
 #[derive(NcpPacket)]
+pub struct GetVolumeName {
+    pub volume_number: u8,
+}
+
+#[derive(NcpPacket)]
+pub struct ScanBinderyObjectTrusteePath {
+    pub volume_number: u8,
+    pub last_sequence_number: u16,
+    pub object_id: u32,
+}
+
+#[derive(NcpPacket)]
+pub struct ScanDirectoryInformation {
+    pub directory_handle: u8,
+    pub starting_search_number: u16,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -451,6 +470,9 @@ pub enum Request {
     GetEffectiveRightsForDirectoryEntry(GetEffectiveRightsForDirectoryEntry),
     ScanVolumeUserDiskRestrictions(ScanVolumeUserDiskRestrictions),
     ScanFileOrDirectoryForExtendedTrustees(ScanFileOrDirectoryForExtendedTrustees),
+    GetVolumeName(GetVolumeName),
+    ScanBinderyObjectTrusteePath(ScanBinderyObjectTrusteePath),
+    ScanDirectoryInformation(ScanDirectoryInformation),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -504,7 +526,9 @@ impl Request {
         return match sub_func {
             0 => { Ok(Request::SetDirectoryHandle(SetDirectoryHandle::from(rdr)?)) },
             1 => { Ok(Request::GetDirectoryPath(GetDirectoryPath::from(rdr)?)) },
+            2 => { Ok(Request::ScanDirectoryInformation(ScanDirectoryInformation::from(rdr)?)) },
             3 => { Ok(Request::GetEffectiveDirectoryRights(GetEffectiveDirectoryRights::from(rdr)?)) },
+            6 => { Ok(Request::GetVolumeName(GetVolumeName::from(rdr)?)) },
             10 => { Ok(Request::CreateDirectory(CreateDirectory::from(rdr)?)) },
             11 => { Ok(Request::DeleteDirectory(DeleteDirectory::from(rdr)?)) },
             18 => { Ok(Request::AllocatePermanentDirectoryHandle(AllocatePermanentDirectoryHandle::from(rdr)?)) },
@@ -546,6 +570,7 @@ impl Request {
             66 => { Ok(Request::DeleteObjectFromSet(DeleteObjectFromSet::from(rdr)?)) },
             67 => { Ok(Request::IsObjectInSet(IsObjectInSet::from(rdr)?)) },
             70 => { Ok(Request::GetBinderyAccessLevel(GetBinderyAccessLevel::from(rdr)?)) },
+            71 => { Ok(Request::ScanBinderyObjectTrusteePath(ScanBinderyObjectTrusteePath::from(rdr)?)) },
             72 => { Ok(Request::GetBinderyObjectAccessLevel(GetBinderyObjectAccessLevel::from(rdr)?)) },
             74 => { Ok(Request::KeyedVerifyPassword(KeyedVerifyPassword::from(rdr)?)) },
             75 => { Ok(Request::KeyedChangePassword(KeyedChangePassword::from(rdr)?)) },

@@ -34,6 +34,7 @@ pub enum NetWareError {
     NoDeletePrivileges,
     ServerLoginLocked,
     NoWritePrivileges,
+    NoMoreDirectoryEntries,
 }
 
 impl NetWareError {
@@ -62,7 +63,8 @@ impl NetWareError {
             NetWareError::NoFilesFound => 0xff,
             NetWareError::UnsupportedRequest | NetWareError::StringTooLong |
             NetWareError::RequestLengthMismatch | NetWareError::NoSuchVolume |
-            NetWareError::NoConnectionsAvailable | NetWareError::InvalidPropertyFlags => 0xff,
+            NetWareError::NoConnectionsAvailable | NetWareError::InvalidPropertyFlags |
+            NetWareError::NoMoreDirectoryEntries => 0xff,
         }
     }
 }
