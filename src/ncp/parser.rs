@@ -413,6 +413,22 @@ pub struct CheckConsolePrivileges {
 }
 
 #[derive(NcpPacket)]
+pub struct AddExtendedTrusteeToDirectoryOrFile {
+    pub directory_handle: u8,
+    pub object_id: u32,
+    pub trustee_rights: u16,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
+pub struct RemoveExtendedTrusteeFromDirectoryOrFile {
+    pub directory_handle: u8,
+    pub object_id: u32,
+    pub _unused: u8,
+    pub path: MaxBoundedString,
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -478,6 +494,8 @@ pub enum Request {
     ScanBinderyObjectTrusteePath(ScanBinderyObjectTrusteePath),
     ScanDirectoryInformation(ScanDirectoryInformation),
     CheckConsolePrivileges(CheckConsolePrivileges),
+    AddExtendedTrusteeToDirectoryOrFile(AddExtendedTrusteeToDirectoryOrFile),
+    RemoveExtendedTrusteeFromDirectoryOrFile(RemoveExtendedTrusteeFromDirectoryOrFile),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -542,7 +560,9 @@ impl Request {
             21 => { Ok(Request::GetVolumeInfoWithHandle(GetVolumeInfoWithHandle::from(rdr)?)) },
             32 => { Ok(Request::ScanVolumeUserDiskRestrictions(ScanVolumeUserDiskRestrictions::from(rdr)?)) },
             38 => { Ok(Request::ScanFileOrDirectoryForExtendedTrustees(ScanFileOrDirectoryForExtendedTrustees::from(rdr)?)) },
+            39 => { Ok(Request::AddExtendedTrusteeToDirectoryOrFile(AddExtendedTrusteeToDirectoryOrFile::from(rdr)?)) },
             42 => { Ok(Request::GetEffectiveRightsForDirectoryEntry(GetEffectiveRightsForDirectoryEntry::from(rdr)?)) },
+            43 => { Ok(Request::RemoveExtendedTrusteeFromDirectoryOrFile(RemoveExtendedTrusteeFromDirectoryOrFile::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 22, sub_func)) },
         }
     }

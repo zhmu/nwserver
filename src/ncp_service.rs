@@ -366,6 +366,12 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::CheckConsolePrivileges(args) => {
                 ncp::server::process_request_23_200_check_console_privileges(conn, &args, &mut reply)
             }
+            ncp::parser::Request::AddExtendedTrusteeToDirectoryOrFile(args) => {
+                ncp::filesystem::process_request_22_39_add_extended_trustee_to_directory_or_file(conn, self.config, &mut self.trustee_db, &args, &mut reply)
+            },
+            ncp::parser::Request::RemoveExtendedTrusteeFromDirectoryOrFile(args) => {
+                ncp::filesystem::process_request_22_43_remove_extended_trustee_from_directory_or_file(conn, self.config, &mut self.trustee_db, &args, &mut reply)
+            },
         };
         self.send(dest, result, &mut reply);
     }

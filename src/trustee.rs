@@ -96,16 +96,18 @@ impl TrusteeDB {
         }
     }
 
-    pub fn remove_trustee_from_path(&mut self, volume_index: usize, path: &str, object_id: bindery::ObjectID) {
-        if volume_index >= self.entries.len() { return; }
+    pub fn remove_trustee_from_path(&mut self, volume_index: usize, path: &str, object_id: bindery::ObjectID) -> bool {
+        if volume_index >= self.entries.len() { return false; }
 
         let volume_entries = &mut self.entries[volume_index];
         if let Some((index, p)) = volume_entries.iter_mut().enumerate().find(|(_,i)| i.path == path) {
             p.trustees.retain(|t| t.object_id != object_id);
             if p.trustees.is_empty() {
-                self.entries.remove(index);
+                volume_entries.remove(index);
             }
+            return true;
         }
+        false
     }
 
     pub fn get_path_trustees(&self, volume_index: usize, path: &str) -> Option<&TrusteePath> {
@@ -263,7 +265,7 @@ mod tests {
     fn remove_trustee_with_one_entry_removes_entire_entry() {
         let mut trustees_db = trustee::TrusteeDB::new();
         trustees_db.add_trustee_for_path(0, "FOO", trustee::Trustee{ object_id: 123, rights: trustee::RIGHT_READ });
-        trustees_db.remove_trustee_from_path(0, "FOO", 123);
+        assert!(trustees_db.remove_trustee_from_path(0, "FOO", 123));
 
         assert!(trustees_db.get_path_trustees(0, "FOO").is_none());
     }
@@ -274,7 +276,7 @@ mod tests {
         trustees_db.add_trustee_for_path(0, "FOO", trustee::Trustee{ object_id: 1, rights: trustee::RIGHT_READ });
         trustees_db.add_trustee_for_path(0, "FOO", trustee::Trustee{ object_id: 2, rights: trustee::RIGHT_WRITE });
         trustees_db.add_trustee_for_path(0, "FOO", trustee::Trustee{ object_id: 3, rights: trustee::RIGHT_CREATE });
-        trustees_db.remove_trustee_from_path(0, "FOO", 2);
+        assert!(trustees_db.remove_trustee_from_path(0, "FOO", 2));
 
         let tp = trustees_db.get_path_trustees(0, "FOO").unwrap();
         assert_eq!(tp.trustees.len(), 2);

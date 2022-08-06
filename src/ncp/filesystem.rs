@@ -387,19 +387,17 @@ pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection,
         if !entry.matches(&filename.data()) { continue; }
 
         // XXX verify match, etc.
-        let p = format!("{}/{}", path, entry);
-        if let Ok(md) = std::fs::metadata(&p) {
-            if md.file_type().is_file() {
-                reply.add_u16(index as u16); // next search index
-                reply.add_u16(0); // reserved
-                entry.to(reply); // file name
-                let attr = 0;
-                reply.add_u8(attr); // file attributes
-                reply.add_u8(0); // file execute type
-                reply.add_u32(md.len() as u32); // file length
-                stream_file_times(&md, reply);
-                return Ok(())
-            }
+        let path = format!("{}/{}", nw_path.get_local_path(), entry);
+        if let Ok(md) = std::fs::metadata(&path) {
+            reply.add_u16(index as u16); // next search index
+            reply.add_u16(0); // reserved
+            entry.to(reply); // file name
+            let attr = 0;
+            reply.add_u8(attr); // file attributes
+            reply.add_u8(0); // file execute type
+            reply.add_u32(md.len() as u32); // file length
+            stream_file_times(&md, reply);
+            return Ok(())
         }
     }
     Err(NetWareError::NoFilesFound)
@@ -622,6 +620,24 @@ pub fn process_request_22_6_get_volume_name<'a>(_conn: &mut connection::Connecti
     Ok(())
 }
 
+pub fn process_request_22_39_add_extended_trustee_to_directory_or_file<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &mut trustee::TrusteeDB, args: &parser::AddExtendedTrusteeToDirectoryOrFile, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    // TODO should we check if the object exists?
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
+
+    let trustee = trustee::Trustee{ object_id: args.object_id, rights: swap_rights(args.trustee_rights) };
+    trustee_db.add_trustee_for_path(nw_path.get_volume_index().into(), nw_path.get_volume_path(), trustee);
+    Ok(())
+}
+
+pub fn process_request_22_43_remove_extended_trustee_from_directory_or_file<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &mut trustee::TrusteeDB, args: &parser::RemoveExtendedTrusteeFromDirectoryOrFile, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let nw_path = NetWarePath::new(conn, config, trustee_db, args.directory_handle, &args.path)?;
+
+    if !trustee_db.remove_trustee_from_path(nw_path.get_volume_index().into(), nw_path.get_volume_path(), args.object_id) {
+        return Err(NetWareError::TrusteeNotFound);
+    }
+    Ok(())
+
+}
 fn find_last_slash(path: &MaxBoundedString) -> Option<usize> {
     let mut last_slash_index: Option<usize> = None;
     for index in 0..path.len() {
@@ -675,6 +691,14 @@ mod tests {
     #[test]
     fn split_path_with_volume() {
         let (path, filename) = split_path(&MaxBoundedString::from_str("SYS:FOO"));
+        assert_eq!(path.as_str(), "SYS:");
+        assert_eq!(filename.as_str(), "FOO");
+    }
+
+
+    #[test]
+    fn split_path_removes_prefix_slashes() {
+        let (path, filename) = split_path(&MaxBoundedString::from_str("SYS:\\FOO"));
         assert_eq!(path.as_str(), "SYS:");
         assert_eq!(filename.as_str(), "FOO");
     }

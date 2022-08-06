@@ -36,6 +36,7 @@ pub enum NetWareError {
     NoWritePrivileges,
     NoMoreDirectoryEntries,
     NoConsoleRights,
+    TrusteeNotFound,
 }
 
 impl NetWareError {
@@ -62,6 +63,7 @@ impl NetWareError {
             NetWareError::NoSuchProperty | NetWareError::StationNotLoggedOn => 0xfb,
             NetWareError::NoSuchObject => 0xfc,
             NetWareError::BadStationNumber => 0xfd,
+            NetWareError::TrusteeNotFound => 0xfe,
             NetWareError::NoFilesFound => 0xff,
             NetWareError::UnsupportedRequest | NetWareError::StringTooLong |
             NetWareError::RequestLengthMismatch | NetWareError::NoSuchVolume |
