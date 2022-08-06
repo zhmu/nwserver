@@ -409,6 +409,10 @@ pub struct ScanDirectoryInformation {
 }
 
 #[derive(NcpPacket)]
+pub struct CheckConsolePrivileges {
+}
+
+#[derive(NcpPacket)]
 pub struct CreateServiceConnection {
 }
 
@@ -473,6 +477,7 @@ pub enum Request {
     GetVolumeName(GetVolumeName),
     ScanBinderyObjectTrusteePath(ScanBinderyObjectTrusteePath),
     ScanDirectoryInformation(ScanDirectoryInformation),
+    CheckConsolePrivileges(CheckConsolePrivileges),
     CreateServiceConnection(CreateServiceConnection),
     DestroyServiceConnection(DestroyServiceConnection),
 }
@@ -574,6 +579,7 @@ impl Request {
             72 => { Ok(Request::GetBinderyObjectAccessLevel(GetBinderyObjectAccessLevel::from(rdr)?)) },
             74 => { Ok(Request::KeyedVerifyPassword(KeyedVerifyPassword::from(rdr)?)) },
             75 => { Ok(Request::KeyedChangePassword(KeyedChangePassword::from(rdr)?)) },
+            200 => { Ok(Request::CheckConsolePrivileges(CheckConsolePrivileges::from(rdr)?)) },
             211 => { Ok(Request::DownFileServer(DownFileServer::from(rdr)?)) },
             _ => { Ok(Request::UnrecognizedRequest(REQUEST_TYPE_REQUEST, 23, sub_func)) },
         }

@@ -61,8 +61,14 @@ pub fn process_request_20_get_fileserver_date_and_time(_conn: &mut connection::C
     Ok(())
 }
 
-pub fn process_request_23_211_down_file_server(_conn: &mut connection::Connection, _args: &parser::DownFileServer, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_211_down_file_server(conn: &mut connection::Connection, _args: &parser::DownFileServer, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if !conn.has_console_rights() { return Err(NetWareError::NoConsoleRights); }
     info!("SERVER DOWN REQUESTED - EXITING!");
     nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::Signal::SIGINT).expect("can't send SIGINT to self");
+    Ok(())
+}
+
+pub fn process_request_23_200_check_console_privileges(conn: &mut connection::Connection, _args: &parser::CheckConsolePrivileges, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    if !conn.has_console_rights() { return Err(NetWareError::NoConsoleRights); }
     Ok(())
 }

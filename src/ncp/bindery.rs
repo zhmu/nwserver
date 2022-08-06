@@ -140,10 +140,17 @@ pub fn process_request_23_67_is_object_in_set(_conn: &mut connection::Connection
     members.is_member_of_set(member_id)
 }
 
-pub fn process_request_23_72_get_bindery_object_access_level(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let _ = bindery.get_object_by_id(args.object_id)?;
+pub fn process_request_23_72_get_bindery_object_access_level(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let object = bindery.get_object_by_id(args.object_id)?;
 
-    let access_level = 0x33; // TODO
+    let access_level;
+    if conn.is_supervisor_equivalent() {
+        access_level = 0x33;
+    } else if let Some(_) = conn.get_security_equivalent_ids().iter().find(|i| **i == object.id) {
+        access_level = 0x22;
+    } else {
+        access_level = 0x11;
+    }
     reply.add_u8(access_level); // ObjectAccessLevel
     Ok(())
 }

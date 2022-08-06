@@ -363,6 +363,9 @@ impl<'a> NcpService<'a> {
             ncp::parser::Request::ScanDirectoryInformation(args) => {
                 ncp::filesystem::process_request_22_2_scan_directory_information(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
+            ncp::parser::Request::CheckConsolePrivileges(args) => {
+                ncp::server::process_request_23_200_check_console_privileges(conn, &args, &mut reply)
+            }
         };
         self.send(dest, result, &mut reply);
     }

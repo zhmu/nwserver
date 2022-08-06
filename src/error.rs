@@ -35,6 +35,7 @@ pub enum NetWareError {
     ServerLoginLocked,
     NoWritePrivileges,
     NoMoreDirectoryEntries,
+    NoConsoleRights,
 }
 
 impl NetWareError {
@@ -53,6 +54,7 @@ impl NetWareError {
             NetWareError::InvalidPath => 0x9c,
             NetWareError::DirectoryIoError => 0xa1,
             NetWareError::ServerLoginLocked => 0xc5,
+            NetWareError::NoConsoleRights => 0xc6,
             NetWareError::InvalidPassword => 0xde,
             NetWareError::NoSuchMember => 0xea,
             NetWareError::NoSuchSet => 0xec,

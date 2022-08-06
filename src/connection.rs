@@ -84,6 +84,19 @@ impl<'a> Connection<'a> {
         login_dh.path = MaxBoundedString::from_str(config.get_login_root());
     }
 
+    pub fn is_supervisor_equivalent(&self) -> bool {
+        return if let Some(_) = self.security_equals_ids.iter().find(|id| **id == bindery::ID_SUPERVISOR) {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn has_console_rights(&self) -> bool {
+        // TODO Also consider OPERATORS property of file server bindery object
+        self.is_supervisor_equivalent()
+    }
+
     pub fn login(&mut self, bindery: &mut bindery::Bindery, object_id: bindery::ObjectID) {
         self.logged_in_object_id = object_id;
         self.security_equals_ids = [ bindery::ID_EMPTY; consts::MAX_SECURITY_EQUALS_IDS ];
@@ -109,11 +122,7 @@ impl<'a> Connection<'a> {
             }
         }
 
-        if let Some(_) = self.security_equals_ids.iter().find(|id| **id == bindery::ID_SUPERVISOR) {
-            self.bindery_security = 0x33;
-        } else {
-            self.bindery_security = 0x22;
-        }
+        self.bindery_security = if self.is_supervisor_equivalent() { 0x33 } else { 0x11 };
     }
 
     pub fn in_use(&self) -> bool {
