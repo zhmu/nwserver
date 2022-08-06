@@ -99,14 +99,14 @@ pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connec
 
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
     if object.contains_property("PASSWORD") {
-        let mut property = object.get_property_by_name("PASSWORD")?;
+        let property = object.get_property_by_name("PASSWORD")?;
         let segment = property.get_segment(0).unwrap();
         let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
         if crypted_password != *args.key.data() { return Err(NetWareError::InvalidPassword) }
     } else {
         object.create_property("PASSWORD", bindery::FLAG_STATIC, 0x44)?;
     }
-    let mut property = object.get_property_by_name("PASSWORD")?;
+    let property = object.get_property_by_name("PASSWORD")?;
     let segment = property.get_segment(0).unwrap();
     if args.new_password.len() < 16 { return Err(NetWareError::InvalidPassword) }
 
@@ -119,7 +119,7 @@ pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connec
     Ok(())
 }
 
-pub fn process_request_23_66_delete_object_from_set(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::DeleteObjectFromSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_66_delete_object_from_set(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::DeleteObjectFromSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
     let member_id = member.id;
 
@@ -130,7 +130,7 @@ pub fn process_request_23_66_delete_object_from_set(conn: &mut connection::Conne
     Ok(())
 }
 
-pub fn process_request_23_67_is_object_in_set(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::IsObjectInSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_67_is_object_in_set(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::IsObjectInSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
     let member_id = member.id;
 
@@ -140,15 +140,15 @@ pub fn process_request_23_67_is_object_in_set(conn: &mut connection::Connection,
     members.is_member_of_set(member_id)
 }
 
-pub fn process_request_23_72_get_bindery_object_access_level(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let object = bindery.get_object_by_id(args.object_id)?;
+pub fn process_request_23_72_get_bindery_object_access_level(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::GetBinderyObjectAccessLevel, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+    let _ = bindery.get_object_by_id(args.object_id)?;
 
     let access_level = 0x33; // TODO
     reply.add_u8(access_level); // ObjectAccessLevel
     Ok(())
 }
 
-pub fn process_request_23_65_add_bindery_object_to_set(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::AddBinderyObjectToSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_65_add_bindery_object_to_set(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::AddBinderyObjectToSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
     let member_id = member.id;
 
@@ -159,7 +159,7 @@ pub fn process_request_23_65_add_bindery_object_to_set(conn: &mut connection::Co
     Ok(())
 }
 
-pub fn process_request_23_57_create_property(conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateProperty, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_57_create_property(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateProperty, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
 
     if let Ok(_) = object.get_property_by_name(args.property_name.as_str()) {
@@ -171,7 +171,7 @@ pub fn process_request_23_57_create_property(conn: &mut connection::Connection, 
     Ok(())
 }
 
-pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::WritePropertyValue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::WritePropertyValue, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
     if args.segment_number == 0 { return Err(NetWareError::NoSuchProperty); }
     if args.more_flag != 0 { return Err(NetWareError::UnsupportedRequest); } // TODO
@@ -190,7 +190,7 @@ pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connec
     }
 }
 
-pub fn process_request_23_50_create_bindery_object(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateBinderyObject, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_50_create_bindery_object(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateBinderyObject, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
 
     let object_name = args.object_name.as_str();
@@ -198,7 +198,7 @@ pub fn process_request_23_50_create_bindery_object(_conn: &mut connection::Conne
     Ok(())
 }
 
-pub fn process_request_23_51_delete_bindery_object(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::DeleteBinderyObject, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_51_delete_bindery_object(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::DeleteBinderyObject, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     if args.object_type == bindery::TYPE_WILD { return Err(NetWareError::NoSuchObject); }
 
     let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
@@ -207,7 +207,7 @@ pub fn process_request_23_51_delete_bindery_object(_conn: &mut connection::Conne
     Ok(())
 }
 
-pub fn process_request_23_71_scan_bindery_object_trustee_path<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::ScanBinderyObjectTrusteePath, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_71_scan_bindery_object_trustee_path<'a>(_conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::ScanBinderyObjectTrusteePath, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let volume = config.get_volumes().get_volume_by_number(args.volume_number as usize)?;
     let sequence = if args.last_sequence_number == 0xffff { 0 } else { args.last_sequence_number };
 

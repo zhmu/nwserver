@@ -22,8 +22,8 @@ const RIP_OP_RESPONSE: u16 = 2; // Provide information
 #[derive(Debug)]
 pub struct RipEntry {
     dest: u32,
-    metric: u16,
-    ticks: u16,
+    _metric: u16,
+    _ticks: u16,
 }
 
 impl RipEntry {
@@ -31,7 +31,7 @@ impl RipEntry {
         let dest = rdr.read_u32::<BigEndian>().ok()?;
         let metric = rdr.read_u16::<BigEndian>().ok()?;
         let ticks = rdr.read_u16::<BigEndian>().ok()?;
-        Some(RipEntry{ dest, metric, ticks })
+        Some(RipEntry{ dest, _metric: metric, _ticks: ticks })
     }
 }
 

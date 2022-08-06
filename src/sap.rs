@@ -26,10 +26,10 @@ const SAP_SERVICE_TYPE_FILESERVER: u16 = 4;
 
 #[derive(Debug)]
 pub struct SapEntry {
-    service_type: u16,
-    server_name: [ u8; consts::SERVER_NAME_LENGTH ],
-    address: IpxAddr,
-    hops: u16,
+    _service_type: u16,
+    _server_name: [ u8; consts::SERVER_NAME_LENGTH ],
+    _address: IpxAddr,
+    _hops: u16,
 }
 
 fn parse_sap_record<T: Read + ReadBytesExt>(rdr: &mut T) -> Option<SapEntry> {
@@ -38,7 +38,7 @@ fn parse_sap_record<T: Read + ReadBytesExt>(rdr: &mut T) -> Option<SapEntry> {
     rdr.read(&mut server_name).ok()?;
     let address = IpxAddr::from(rdr)?;
     let hops = rdr.read_u16::<BigEndian>().ok()?;
-    Some(SapEntry { service_type, server_name, address, hops })
+    Some(SapEntry { _service_type: service_type, _server_name: server_name, _address: address, _hops: hops })
 }
 
 pub struct SapService<'a> {

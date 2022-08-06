@@ -122,7 +122,7 @@ impl<'a> Connection<'a> {
 
     pub fn free_temp_dir_handles(&mut self) -> usize {
         let mut num_freed = 0;
-        for (n, dh) in self.dir_handle.iter_mut().enumerate() {
+        for dh in self.dir_handle.iter_mut() {
             if dh.is_available() { continue; }
             if dh.typ != handle::DirectoryHandleType::Temporary { continue; }
 

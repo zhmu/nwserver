@@ -235,11 +235,6 @@ impl Bindery {
         Ok(())
     }
 
-    fn is_supervisor(&mut self, object_id: ObjectID) -> bool {
-        // TODO Check security equivalences, etc
-        object_id == bindery::ID_SUPERVISOR
-    }
-
     fn generate_next_id(&mut self) -> ObjectID {
         let id = self.next_id;
         self.next_id += 1;
@@ -286,10 +281,9 @@ impl Bindery {
     }
 
     fn add_file_server(&mut self, server_name: &str, server_addr: IpxAddr) -> Result<(), NetWareError> {
-        let object_id = self.generate_next_id();
-        let mut server = self.create_object(None, server_name, TYPE_FILE_SERVER, FLAG_DYNAMIC, 0x40)?;
+        let server = self.create_object(None, server_name, TYPE_FILE_SERVER, FLAG_DYNAMIC, 0x40)?;
 
-        let mut net_addr = server.create_property("NET_ADDRESS", FLAG_DYNAMIC, 0x40)?;
+        let net_addr = server.create_property("NET_ADDRESS", FLAG_DYNAMIC, 0x40)?;
         let mut addr_buffer = [ 0u8; 12 ];
         server_addr.to(&mut addr_buffer);
         net_addr.set_data(0, &addr_buffer);
@@ -308,7 +302,7 @@ impl Bindery {
     }
 
     fn add_user(&mut self, user_name: &str, user_id: Option<bindery::ObjectID>) -> Result<ObjectID, NetWareError> {
-        let mut user = self.create_object(user_id, user_name, TYPE_USER, FLAG_STATIC, 0x31)?;
+        let user = self.create_object(user_id, user_name, TYPE_USER, FLAG_STATIC, 0x31)?;
         user.create_property("PASSWORD", FLAG_STATIC, 0x44)?;
         user.create_property("GROUPS_I'M_IN", FLAG_STATIC | FLAG_SET, 0x31)?;
         user.create_property("SECURITY_EQUALS", FLAG_STATIC | FLAG_SET, 0x32)?;
@@ -316,7 +310,7 @@ impl Bindery {
     }
 
     fn add_group(&mut self, group_name: &str) -> Result<ObjectID, NetWareError> {
-        let mut group = self.create_object(None, group_name, TYPE_USER_GROUP, FLAG_STATIC, 0x31)?;
+        let group = self.create_object(None, group_name, TYPE_USER_GROUP, FLAG_STATIC, 0x31)?;
         group.create_property("GROUP_MEMBERS", FLAG_STATIC | FLAG_SET, 0x31)?;
         Ok(group.id)
     }
@@ -382,11 +376,11 @@ impl Bindery {
             let typ = toml_object.r#type as u16;
             let flag = toml_object.flag as Flag;
             let security = toml_object.security as Security;
-            let mut object = self.create_object(Some(id), &toml_object.name, typ, flag, security)?;
+            let object = self.create_object(Some(id), &toml_object.name, typ, flag, security)?;
             for toml_property in &toml_object.property {
                 let flag = toml_property.flag as Flag;
                 let security = toml_property.security as Security;
-                let mut prop = object.create_property(&toml_property.name, flag, security)?;
+                let prop = object.create_property(&toml_property.name, flag, security)?;
                 if (toml_property.value.len() % (2 * consts::PROPERTY_SEGMENT_LENGTH)) != 0 {
                     panic!("invalid property data length");
                 }
