@@ -1,5 +1,6 @@
 server_name = "BUCKET"
 bindery_file = "bindery.toml"
+trustee_file = "trustee.toml"
 
 [unix]
 # if set, changes to this user/group after startup

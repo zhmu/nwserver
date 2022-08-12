@@ -106,6 +106,7 @@ pub struct Configuration {
 struct TomlConfig {
     server_name: String,
     bindery_file: Option<String>,
+    trustee_file: Option<String>,
     network: TomlNetwork,
     users: BTreeMap<String, TomlUser>,
     groups: BTreeMap<String, TomlGroup>,
@@ -187,8 +188,7 @@ impl Configuration {
 
         let volumes = Volumes::new(&toml)?;
 
-        let (login_volume, login_root) =  parse_visitor_root(&volumes, &toml.login.visitor_root)?;
-
+        let (login_volume, login_root) = parse_visitor_root(&volumes, &toml.login.visitor_root)?;
         Ok(Self{ toml, server_address, network_address, server_name, volumes, login_volume, login_root })
     }
 
@@ -242,5 +242,9 @@ impl Configuration {
 
     pub fn get_unix(&self) -> &Option<TomlUnix> {
         &self.toml.unix
+    }
+
+    pub fn get_trustee_file(&self) -> &Option<String> {
+        &self.toml.trustee_file
     }
 }

@@ -243,7 +243,7 @@ impl Bindery {
 
     pub fn get_object_by_name(&mut self, object_name: MaxBoundedString, object_type: ObjectType) -> Result<&mut Object, NetWareError> {
         for object in self.objects.iter_mut() {
-            if object.name.equals(object_name) && object.typ == object_type {
+            if object.name.equals(object_name) && (object_type == TYPE_WILD || object.typ == object_type) {
                 return Ok(object)
             }
         }

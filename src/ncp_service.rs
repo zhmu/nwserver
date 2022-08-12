@@ -121,20 +121,30 @@ impl<'a> NcpService<'a> {
         }
 
         let mut trustee_db = trustee::TrusteeDB::new();
-        info!("initialising trustee database");
+        let mut initialise_trustees = false;
+        if let Some(path) = config.get_trustee_file() {
+            if let Err(e) = trustee_db.load(config, &mut bindery, path) {
+                error!("unable to load trustees from {}: {:?}", path, e);
+                initialise_trustees = true;
+            }
+        } else {
+            initialise_trustees = true;
+        }
+        if initialise_trustees {
+            info!("initialising trustee database");
+            let sys_volume = config.get_volumes().get_volume_by_name("SYS").expect("SYS volume not found");
+            let sys_index: usize = sys_volume.number.into();
 
-        let sys_volume = config.get_volumes().get_volume_by_name("SYS").expect("SYS volume not found");
-        let sys_index: usize = sys_volume.number.into();
+            let rwcemf = trustee::RIGHT_READ | trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_OPEN | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY | trustee::RIGHT_FILESCAN;
+            trustee_db.add_trustee_for_path(sys_index, "", trustee::Trustee{ object_id: bindery::ID_SUPERVISOR, rights: rwcemf | trustee::RIGHT_PARENTAL | trustee::RIGHT_SUPERVISOR });
+            trustee_db.add_trustee_for_path(sys_index, "LOGIN", trustee::Trustee{ object_id: bindery::ID_NOT_LOGGED_IN, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
 
-        let rwcemf = trustee::RIGHT_READ | trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_OPEN | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY | trustee::RIGHT_FILESCAN;
-        trustee_db.add_trustee_for_path(sys_index, "", trustee::Trustee{ object_id: bindery::ID_SUPERVISOR, rights: rwcemf | trustee::RIGHT_PARENTAL | trustee::RIGHT_SUPERVISOR });
-        trustee_db.add_trustee_for_path(sys_index, "LOGIN", trustee::Trustee{ object_id: bindery::ID_NOT_LOGGED_IN, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN });
-
-        let everyone_id = bindery.get_object_by_name(MaxBoundedString::from_str("EVERYONE"), bindery::TYPE_USER_GROUP).expect("cannot find EVERYONE group").id;
-        trustee_db.add_trustee_for_path(sys_index, "LOGIN", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
-        trustee_db.add_trustee_for_path(sys_index, "PUBLIC", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
-        trustee_db.add_trustee_for_path(sys_index, "TEMP", trustee::Trustee{ object_id: everyone_id, rights: rwcemf });
-        trustee_db.add_trustee_for_path(sys_index, "MAIL", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_CREATE });
+            let everyone_id = bindery.get_object_by_name(MaxBoundedString::from_str("EVERYONE"), bindery::TYPE_USER_GROUP).expect("cannot find EVERYONE group").id;
+            trustee_db.add_trustee_for_path(sys_index, "LOGIN", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
+            trustee_db.add_trustee_for_path(sys_index, "PUBLIC", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_READ | trustee::RIGHT_FILESCAN | trustee::RIGHT_OPEN });
+            trustee_db.add_trustee_for_path(sys_index, "TEMP", trustee::Trustee{ object_id: everyone_id, rights: rwcemf });
+            trustee_db.add_trustee_for_path(sys_index, "MAIL", trustee::Trustee{ object_id: everyone_id, rights: trustee::RIGHT_CREATE });
+        }
 
         NcpService{ config, tx, clients, bindery, trustee_db }
     }
@@ -398,6 +408,12 @@ impl<'a> Drop for NcpService<'a> {
             match self.bindery.save(path) {
                 Ok(()) => { info!("bindery saved to '{}'", path); },
                 Err(e) => { error!("unable to save bindery to '{}': {:?}", path, e); },
+            }
+        }
+        if let Some(path) = self.config.get_trustee_file() {
+            match self.trustee_db.save(self.config, &mut self.bindery, path) {
+                Ok(()) => { info!("trustees saved to '{}'", path); },
+                Err(e) => { error!("unable to save trustees to '{}': {:?}", path, e); },
             }
         }
     }

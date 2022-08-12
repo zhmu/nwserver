@@ -6,7 +6,12 @@
  */
 
 use crate::bindery;
+use crate::config;
+use crate::types::*;
 use log::*;
+
+use std::collections::BTreeMap;
+use serde::{Serialize, Deserialize};
 
 type Rights = u16;
 
@@ -20,6 +25,26 @@ pub const RIGHT_PARENTAL: Rights = 0x20; // parental rights (create/remove subdi
 pub const RIGHT_FILESCAN: Rights = 0x40;
 pub const RIGHT_MODIFY: Rights = 0x80;
 pub const RIGHT_SUPERVISOR: Rights = 0x100;
+
+#[derive(Debug)]
+pub enum TrusteeError {
+    IoError(std::io::Error),
+    TomlError(toml::de::Error),
+    VolumeNotFound(String),
+    ObjectNotFound(String),
+}
+
+impl From<std::io::Error> for TrusteeError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e)
+    }
+}
+
+impl From<toml::de::Error> for TrusteeError {
+    fn from(e: toml::de::Error) -> Self {
+        Self::TomlError(e)
+    }
+}
 
 pub struct Trustee {
     pub object_id: bindery::ObjectID,
@@ -152,7 +177,124 @@ impl TrusteeDB {
         }
         None
     }
+
+    pub fn load(&mut self, config: &config::Configuration, bindery: &mut bindery::Bindery, fname: &str) -> Result<(), TrusteeError> {
+        let content = std::fs::read_to_string(fname)?;
+        let toml: TomlConfig = toml::from_str(&content)?;
+        let volumes = config.get_volumes();
+
+        for (vol_name, vol_paths) in &toml.trustees {
+            let vol_name = &vol_name.to_string().to_uppercase();
+            let volume = volumes.get_volume_by_name(vol_name).map_err(|_| TrusteeError::VolumeNotFound(vol_name.to_string()))?;
+            for (path_name, path_trustees) in vol_paths {
+                let mut path_name = path_name.to_string().to_uppercase();
+                if path_name == "/" {
+                    path_name = String::new();
+                }
+
+                for (object_name, object_rights) in path_trustees {
+                    let object_name = &object_name.to_string().to_uppercase();
+                    let rights = parse_rights_from_str(object_rights).expect("cannot parse rights");
+
+                    let object_id;
+                    if let Ok(object) = bindery.get_object_by_name(MaxBoundedString::from_str(object_name), bindery::TYPE_WILD).map_err(|_| TrusteeError::ObjectNotFound(object_name.to_string())) {
+                        object_id = object.id;
+                    } else if object_name.starts_with("*") {
+                        object_id = bindery::ObjectID::from_str_radix(&object_name[1..], 16).expect("cannot parse hex int");
+                    } else {
+                        return Err(TrusteeError::ObjectNotFound(object_name.to_string()));
+                    }
+
+                    self.add_trustee_for_path(volume.number.into(), &path_name, Trustee{ object_id, rights });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn save(&mut self, config: &config::Configuration, bindery: &mut bindery::Bindery, fname: &str) -> Result<(), TrusteeError> {
+        let mut toml_trustees = TomlConfig{ trustees: TomlTrustees::new() };
+        let volumes = config.get_volumes();
+
+        for (volume_number, volume_trustees) in self.entries.iter().enumerate() {
+            let volume_name = volumes.get_volume_by_number(volume_number).unwrap().name.as_str();
+
+            let mut toml_object = TomlTrustee::new();
+            for trustee_path in volume_trustees {
+                let mut toml_obj_rights = TomlObjectRights::new();
+                for trustee in &trustee_path.trustees {
+                    let object_name;
+                    if let Ok(object) = bindery.get_object_by_id(trustee.object_id) {
+                        object_name = object.name.as_str().to_string();
+                    } else {
+                        object_name = format!("*{:x}", trustee.object_id);
+                    }
+                    let rights = convert_rights_to_str(trustee.rights);
+                    toml_obj_rights.insert(object_name, rights);
+                }
+                let toml_path;
+                if trustee_path.path.is_empty() {
+                    toml_path = "/".to_string();
+                } else {
+                    toml_path = trustee_path.path.clone();
+                }
+                toml_object.insert(toml_path, toml_obj_rights);
+            }
+            toml_trustees.trustees.insert(volume_name.to_string(), toml_object);
+        }
+
+        let toml = toml::to_string(&toml_trustees).expect("cannot encode toml");
+        std::fs::write(fname, toml)?;
+        Ok(())
+    }
 }
+
+fn parse_rights_from_str(rights: &str) -> Option<u16> {
+    let mut result: u16 = 0;
+    for ch in rights.chars() {
+        let ch = ch.to_uppercase().next()?;
+        result += match ch {
+            'R' => { RIGHT_READ },
+            'W' => { RIGHT_WRITE },
+            'O' => { RIGHT_OPEN },
+            'C' => { RIGHT_CREATE },
+            'E' => { RIGHT_ERASE },
+            'A' => { RIGHT_PARENTAL },
+            'F' => { RIGHT_FILESCAN },
+            'M' => { RIGHT_MODIFY },
+            'S' => { RIGHT_SUPERVISOR },
+            _ => { return None; }
+        };
+    }
+    Some(result)
+}
+
+fn convert_rights_to_str(rights: u16) -> String {
+    let mut result = String::new();
+    if (rights & RIGHT_READ) != 0 { result += "r"; }
+    if (rights & RIGHT_WRITE) != 0 { result += "w"; }
+    if (rights & RIGHT_OPEN) != 0 { result += "o" }
+    if (rights & RIGHT_CREATE) != 0 { result += "c"; }
+    if (rights & RIGHT_ERASE) != 0 { result += "e"; }
+    if (rights & RIGHT_PARENTAL) != 0 { result += "a"; }
+    if (rights & RIGHT_FILESCAN) != 0 { result += "f"; }
+    if (rights & RIGHT_MODIFY) != 0 { result += "m"; }
+    if (rights & RIGHT_SUPERVISOR) != 0 { result += "s"; }
+    result
+}
+
+// { user: rights }
+type TomlObjectRights = BTreeMap<String, String>;
+// Path -> { user = rights }
+type TomlTrustee = BTreeMap<String, TomlObjectRights>;
+// Volume -> Trustee
+type TomlTrustees = BTreeMap<String, TomlTrustee>;
+
+#[derive(Serialize,Deserialize)]
+struct TomlConfig {
+    trustees: TomlTrustees,
+}
+
 
 #[cfg(test)]
 mod tests {
