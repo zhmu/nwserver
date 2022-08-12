@@ -75,6 +75,7 @@ impl Property {
     }
 
     pub fn add_member_to_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
+        if (self.flag & FLAG_SET) == 0 { return Err(NetWareError::NoSuchSet); }
         for value in &mut self.values {
             for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
                 let buf = &mut value[offset..offset + 4];
@@ -89,6 +90,7 @@ impl Property {
     }
 
     pub fn remove_member_from_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
+        if (self.flag & FLAG_SET) == 0 { return Err(NetWareError::NoSuchSet); }
         for value in &mut self.values {
             for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
                 let buf = &mut value[offset..offset + 4];
@@ -103,6 +105,7 @@ impl Property {
     }
 
     pub fn is_member_of_set(&mut self, member_id: ObjectID) -> Result<(), NetWareError> {
+        if (self.flag & FLAG_SET) == 0 { return Err(NetWareError::NoSuchSet); }
         for value in &mut self.values {
             for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
                 let buf = &mut value[offset..offset + 4];
@@ -181,7 +184,8 @@ struct TomlProperty {
     name: String,
     flag: u64,
     security: u64,
-    value: String,
+    value: Option<String>,
+    members: Option<Vec<String>>,
 }
 
 #[derive(Serialize,Deserialize)]
@@ -250,8 +254,26 @@ impl Bindery {
         Err(NetWareError::NoSuchObject)
     }
 
+    pub fn get_object_by_name2(&self, object_name: MaxBoundedString, object_type: ObjectType) -> Result<&Object, NetWareError> {
+        for object in &self.objects {
+            if object.name.equals(object_name) && (object_type == TYPE_WILD || object.typ == object_type) {
+                return Ok(object)
+            }
+        }
+        Err(NetWareError::NoSuchObject)
+    }
+
     pub fn get_object_by_id(&mut self, object_id: ObjectID) -> Result<&mut Object, NetWareError> {
         for object in self.objects.iter_mut() {
+            if object.id == object_id {
+                return Ok(object)
+            }
+        }
+        Err(NetWareError::NoSuchObject)
+    }
+
+    pub fn get_object_by_id2(&self, object_id: ObjectID) -> Result<&Object, NetWareError> {
+        for object in &self.objects {
             if object.id == object_id {
                 return Ok(object)
             }
@@ -349,12 +371,30 @@ impl Bindery {
                     name: property.name.to_string(),
                     flag: property.flag.into(),
                     security: property.security.into(),
-                    value: String::new()
+                    value: None,
+                    members: None,
                 };
-                for data in &property.values {
-                    for v in data {
-                        toml_property.value += format!("{:02x}", v).as_str();
+
+                if (property.flag & FLAG_SET) == 0 {
+                    let mut value = String::new();
+                    for data in &property.values {
+                        for v in data {
+                            value += format!("{:02x}", v).as_str();
+                        }
                     }
+                    toml_property.value = Some(value);
+                } else {
+                    let mut members: Vec<String> = Vec::new();
+                    for value in &property.values {
+                        for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
+                            let buf = &value[offset..offset + 4];
+                            let value_id = BigEndian::read_u32(buf);
+                            if value_id != ID_EMPTY {
+                                members.push(object_id_to_str(self, value_id));
+                            }
+                        }
+                    }
+                    toml_property.members = Some(members);
                 }
                 toml_object.property.push(toml_property);
             }
@@ -381,20 +421,57 @@ impl Bindery {
                 let flag = toml_property.flag as Flag;
                 let security = toml_property.security as Security;
                 let prop = object.create_property(&toml_property.name, flag, security)?;
-                if (toml_property.value.len() % (2 * consts::PROPERTY_SEGMENT_LENGTH)) != 0 {
-                    panic!("invalid property data length");
-                }
-                let chars_per_segment = 2 * consts::PROPERTY_SEGMENT_LENGTH;
-                for n in 0..(toml_property.value.len() / chars_per_segment) {
-                    let mut data: PropertyData = [ 0u8; consts::PROPERTY_SEGMENT_LENGTH ];
-                    for m in 0..consts::PROPERTY_SEGMENT_LENGTH {
-                        let index = chars_per_segment * n + m * 2;
-                        data[m] = u8::from_str_radix(&toml_property.value[index..index + 2], 16).expect("corrupt value");
+                if let Some(value) = &toml_property.value {
+                    if (value.len() % (2 * consts::PROPERTY_SEGMENT_LENGTH)) != 0 {
+                        panic!("invalid property data length");
                     }
-                    prop.set_data(n * consts::PROPERTY_SEGMENT_LENGTH, &data);
+                    let chars_per_segment = 2 * consts::PROPERTY_SEGMENT_LENGTH;
+                    for n in 0..(value.len() / chars_per_segment) {
+                        let mut data: PropertyData = [ 0u8; consts::PROPERTY_SEGMENT_LENGTH ];
+                        for m in 0..consts::PROPERTY_SEGMENT_LENGTH {
+                            let index = chars_per_segment * n + m * 2;
+                            data[m] = u8::from_str_radix(&value[index..index + 2], 16).expect("corrupt value");
+                        }
+                        prop.set_data(n * consts::PROPERTY_SEGMENT_LENGTH, &data);
+                    }
+                }
+            }
+        }
+
+        // Second pass to resolve all set members
+        for (id, toml_object) in &toml.object {
+            let id = u32::from_str_radix(id, 16).unwrap();
+            for toml_property in &toml_object.property {
+                if let Some(members) = &toml_property.members {
+                    for member in members {
+                        if let Some(member_id) = str_to_object_id(self, member) {
+                            // TODO This is a bit unfortunate ...
+                            let object = self.get_object_by_id(id).unwrap();
+                            let prop = object.get_property_by_name(&toml_property.name).unwrap();
+                            prop.add_member_to_set(member_id).expect("unable to add member");
+                        }
+                    }
                 }
             }
         }
         Ok(())
+    }
+}
+
+pub fn str_to_object_id(bindery: &bindery::Bindery, s: &str) -> Option<bindery::ObjectID> {
+    return if let Ok(object) = bindery.get_object_by_name2(MaxBoundedString::from_str(s), bindery::TYPE_WILD) {
+        Some(object.id)
+    } else if s.starts_with("*") {
+        bindery::ObjectID::from_str_radix(&s[1..], 16).ok()
+    } else {
+        None
+    }
+}
+
+pub fn object_id_to_str(bindery: &bindery::Bindery, object_id: bindery::ObjectID) -> String {
+    return if let Ok(object) = bindery.get_object_by_id2(object_id) {
+        object.name.as_str().to_string()
+    } else {
+        format!("*{:x}", object_id)
     }
 }
