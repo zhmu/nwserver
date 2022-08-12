@@ -7,7 +7,6 @@
 
 use crate::bindery;
 use crate::config;
-use crate::types::*;
 use log::*;
 
 use std::collections::BTreeMap;

@@ -382,7 +382,16 @@ impl Bindery {
                             value += format!("{:02x}", v).as_str();
                         }
                     }
-                    toml_property.value = Some(value);
+
+                    // Trim trailing zero's from the value, we do not need to store these
+                    let mut last_index = value.len();
+                    while last_index > 2 && &value[last_index - 2..last_index] == "00" {
+                        last_index -= 2;
+                    }
+                    value = value[..last_index].to_string();
+                    if !value.is_empty() {
+                        toml_property.value = Some(value);
+                    }
                 } else {
                     let mut members: Vec<String> = Vec::new();
                     for value in &property.values {
@@ -422,17 +431,12 @@ impl Bindery {
                 let security = toml_property.security as Security;
                 let prop = object.create_property(&toml_property.name, flag, security)?;
                 if let Some(value) = &toml_property.value {
-                    if (value.len() % (2 * consts::PROPERTY_SEGMENT_LENGTH)) != 0 {
+                    if (value.len() % 2) != 0 {
                         panic!("invalid property data length");
                     }
-                    let chars_per_segment = 2 * consts::PROPERTY_SEGMENT_LENGTH;
-                    for n in 0..(value.len() / chars_per_segment) {
-                        let mut data: PropertyData = [ 0u8; consts::PROPERTY_SEGMENT_LENGTH ];
-                        for m in 0..consts::PROPERTY_SEGMENT_LENGTH {
-                            let index = chars_per_segment * n + m * 2;
-                            data[m] = u8::from_str_radix(&value[index..index + 2], 16).expect("corrupt value");
-                        }
-                        prop.set_data(n * consts::PROPERTY_SEGMENT_LENGTH, &data);
+                    for (n, m) in (0..value.len()).step_by(2).enumerate() {
+                        let value = u8::from_str_radix(&value[m..m + 2], 16).expect("corrupt value");
+                        prop.set_data(n, &[value]);
                     }
                 }
             }
