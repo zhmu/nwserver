@@ -458,6 +458,12 @@ impl Bindery {
                 }
             }
         }
+
+        if let Some(max_object_id) = self.objects.iter().map(|o| o.id).max() {
+            self.next_id = max_object_id + 1;
+        } else {
+            self.next_id = ID_BASE;
+        }
         Ok(())
     }
 }
