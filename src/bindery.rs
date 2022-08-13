@@ -8,6 +8,7 @@ use crate::bindery;
 use crate::consts;
 use crate::config;
 use crate::crypto;
+use crate::util;
 use crate::error::*;
 use crate::types::*;
 use byteorder::{ByteOrder, BigEndian};
@@ -399,7 +400,7 @@ impl Bindery {
                             let buf = &value[offset..offset + 4];
                             let value_id = BigEndian::read_u32(buf);
                             if value_id != ID_EMPTY {
-                                members.push(object_id_to_str(self, value_id));
+                                members.push(util::object_id_to_str(self, value_id));
                             }
                         }
                     }
@@ -448,7 +449,7 @@ impl Bindery {
             for toml_property in &toml_object.property {
                 if let Some(members) = &toml_property.members {
                     for member in members {
-                        if let Some(member_id) = str_to_object_id(self, member) {
+                        if let Some(member_id) = util::str_to_object_id(self, member) {
                             // TODO This is a bit unfortunate ...
                             let object = self.get_object_by_id(id).unwrap();
                             let prop = object.get_property_by_name(&toml_property.name).unwrap();
@@ -465,23 +466,5 @@ impl Bindery {
             self.next_id = ID_BASE;
         }
         Ok(())
-    }
-}
-
-pub fn str_to_object_id(bindery: &bindery::Bindery, s: &str) -> Option<bindery::ObjectID> {
-    return if let Ok(object) = bindery.get_object_by_name2(MaxBoundedString::from_str(s), bindery::TYPE_WILD) {
-        Some(object.id)
-    } else if s.starts_with("*") {
-        bindery::ObjectID::from_str_radix(&s[1..], 16).ok()
-    } else {
-        None
-    }
-}
-
-pub fn object_id_to_str(bindery: &bindery::Bindery, object_id: bindery::ObjectID) -> String {
-    return if let Ok(object) = bindery.get_object_by_id2(object_id) {
-        object.name.as_str().to_string()
-    } else {
-        format!("*{:x}", object_id)
     }
 }

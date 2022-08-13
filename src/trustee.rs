@@ -7,6 +7,7 @@
 
 use crate::bindery;
 use crate::config;
+use crate::util;
 use log::*;
 
 use std::collections::BTreeMap;
@@ -195,7 +196,7 @@ impl TrusteeDB {
                     let object_name = &object_name.to_string().to_uppercase();
                     let rights = parse_rights_from_str(object_rights).expect("cannot parse rights");
 
-                    let object_id = bindery::str_to_object_id(bindery, object_name).ok_or(TrusteeError::ObjectNotFound(object_name.to_string()))?;
+                    let object_id = util::str_to_object_id(bindery, object_name).ok_or(TrusteeError::ObjectNotFound(object_name.to_string()))?;
                     self.add_trustee_for_path(volume.number.into(), &path_name, Trustee{ object_id, rights });
                 }
             }
@@ -214,7 +215,7 @@ impl TrusteeDB {
             for trustee_path in volume_trustees {
                 let mut toml_obj_rights = TomlObjectRights::new();
                 for trustee in &trustee_path.trustees {
-                    let object_name = bindery::object_id_to_str(bindery, trustee.object_id);
+                    let object_name = util::object_id_to_str(bindery, trustee.object_id);
                     let rights = convert_rights_to_str(trustee.rights);
                     toml_obj_rights.insert(object_name, rights);
                 }

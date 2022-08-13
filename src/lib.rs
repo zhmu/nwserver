@@ -19,3 +19,5 @@ pub mod clients;
 pub mod bindery;
 pub mod crypto;
 pub mod trustee;
+pub mod util;
+pub mod nwpath;
