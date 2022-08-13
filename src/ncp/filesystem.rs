@@ -172,7 +172,7 @@ pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection
     let contents = retrieve_directory_contents(nw_path.get_local_path())?;
 
     // XXX verify existance, access etc
-    let sh = conn.allocate_search_handle(nw_path.get_local_path(), contents);
+    let sh = conn.allocate_search_handle(nw_path.get_local_path(), nw_path.get_volume_index(),  nw_path.get_volume_path(), contents);
     reply.add_u8(nw_path.get_volume_index());
     let directory_id = sh.id;
     reply.add_u16(directory_id);
@@ -182,49 +182,59 @@ pub fn process_request_62_file_search_init<'a>(conn: &mut connection::Connection
     Ok(())
 }
 
-pub fn process_request_63_file_search_continue(conn: &mut connection::Connection, args: &parser::FileSearchContinue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+fn construct_trustee_path(volume_path: &str, entry: &DosFileName) -> String {
+    return if !volume_path.is_empty() {
+        format!("{}/{}", volume_path, entry)
+    } else {
+        format!("{}", entry)
+    }
+}
+
+pub fn process_request_63_file_search_continue(conn: &mut connection::Connection, trustee_db: &trustee::TrusteeDB, args: &parser::FileSearchContinue, reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     if let Some(sh) = conn.get_search_handle(args.directory_id) {
-        if let Some(path) = &sh.path {
-            if let Some(entries) = &sh.entries {
-                let mut index = args.search_sequence as usize;
-                if index == 0xffff { index = 0; }
+        let local_path = sh.local_path.as_ref().unwrap();
+        let volume_path = sh.volume_path.as_ref().unwrap();
+        let entries = sh.entries.as_ref().unwrap();
+        let mut index = args.search_sequence as usize;
+        if index == 0xffff { index = 0; }
 
-                let want_files = (args.search_attr & SA_SUBDIR_ONLY) == 0;
-                let want_dirs = (args.search_attr & SA_SUBDIR_ONLY) != 0;
-                while index < entries.len() {
-                    let entry = entries[index];
-                    index += 1;
+        let want_files = (args.search_attr & SA_SUBDIR_ONLY) == 0;
+        let want_dirs = (args.search_attr & SA_SUBDIR_ONLY) != 0;
+        while index < entries.len() {
+            let entry = entries[index];
+            index += 1;
 
-                    if !entry.matches(&args.search_path.data()) { continue; }
+            if !entry.matches(&args.search_path.data()) { continue; }
 
-                    // XXX verify match, etc.
-                    let p = format!("{}/{}", path, entry);
-                    if let Ok(md) = std::fs::metadata(&p) {
-                        let ft = md.file_type();
-                        if ft.is_dir() && want_dirs {
-                            reply.add_u16(index as u16); // search sequence
-                            reply.add_u16(args.directory_id); // directory id
-                            entry.to(reply); // file name
-                            let attr = ATTR_SUBDIRECTORY;
-                            reply.add_u8(attr); // directory attributes
-                            reply.add_u8(0xff); // directory access rights
-                            stream_creation_date_and_time(&md, reply);
-                            reply.add_u32(0); // owner id
-                            reply.add_u16(0); // reserved
-                            reply.add_u16(0xd1d1); // directory magic
-                            return Ok(())
-                        }
-                        if ft.is_file() && want_files {
-                            reply.add_u16(index as u16); // search sequence
-                            reply.add_u16(args.directory_id); // directory id
-                            entry.to(reply); // file name
-                            reply.add_u8(0); // file attributes
-                            reply.add_u8(0); // file mode
-                            reply.add_u32(md.len() as u32); // file length
-                            stream_file_times(&md, reply);
-                            return Ok(())
-                        }
-                    }
+            let trustee_path = construct_trustee_path(volume_path, &entry);
+            let rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), sh.volume.into(), &trustee_path);
+            if rights == 0 { continue; }
+
+            let p = format!("{}/{}", local_path, entry);
+            if let Ok(md) = std::fs::metadata(&p) {
+                let ft = md.file_type();
+                if ft.is_dir() && want_dirs {
+                    reply.add_u16(index as u16); // search sequence
+                    reply.add_u16(args.directory_id); // directory id
+                    entry.to(reply); // file name
+                    let attr = ATTR_SUBDIRECTORY;
+                    reply.add_u8(attr); // directory attributes
+                    reply.add_u8(0xff); // directory access rights
+                    stream_creation_date_and_time(&md, reply);
+                    reply.add_u32(0); // owner id
+                    reply.add_u16(0); // reserved
+                    reply.add_u16(0xd1d1); // directory magic
+                    return Ok(())
+                }
+                if ft.is_file() && want_files {
+                    reply.add_u16(index as u16); // search sequence
+                    reply.add_u16(args.directory_id); // directory id
+                    entry.to(reply); // file name
+                    reply.add_u8(0); // file attributes
+                    reply.add_u8(0); // file mode
+                    reply.add_u32(md.len() as u32); // file length
+                    stream_file_times(&md, reply);
+                    return Ok(())
                 }
             }
         }
@@ -238,6 +248,11 @@ pub fn process_request_22_3_get_effective_directory_rights<'a>(conn: &mut connec
     if md.is_err() || !md.unwrap().file_type().is_dir() {
         return Err(NetWareError::InvalidPath);
     }
+
+    // XXX We should return InvalidPath if the user has no rights here, but we
+    // need a way to consider inherited rights (SYS: typically is empty, but
+    // SYS:PUBLIC isn't)
+
     reply.add_u8((nw_path.get_access_rights() & 0xff) as u8);
     Ok(())
 }
@@ -386,6 +401,8 @@ pub fn process_request_64_search_for_file<'a>(conn: &mut connection::Connection,
 
         if !entry.matches(&filename.data()) { continue; }
 
+        // TODO trustee
+
         // XXX verify match, etc.
         let path = format!("{}/{}", nw_path.get_local_path(), entry);
         if let Ok(md) = std::fs::metadata(&path) {
@@ -507,6 +524,8 @@ pub fn process_request_68_erase_file<'a>(conn: &mut connection::Connection, conf
     for entry in &contents {
         if !entry.matches(&filename.data()) { continue; }
 
+        // TODO trustee
+
         let path = format!("{}/{}", nw_path.get_local_path(), entry);
         std::fs::remove_file(path)?;
     }
@@ -516,6 +535,12 @@ pub fn process_request_68_erase_file<'a>(conn: &mut connection::Connection, conf
 
 pub fn process_request_22_0_set_directory_handle<'a>(conn: &mut connection::Connection<'a>, config: &'a config::Configuration, trustee_db: &trustee::TrusteeDB, args: &parser::SetDirectoryHandle, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     let nw_path = NetWarePath::new(conn, config, trustee_db, args.source_directory_handle, &args.path)?;
+
+    // XXX We should return InvalidPath if the user has no rights here, but we
+    // need a way to consider inherited rights (SYS: typically is empty, but
+    // SYS:PUBLIC isn't)
+    // if nw_path.get_access_rights() == 0 { return Err(NetWareError::InvalidPath); }
+
     let dh = conn.get_mut_dir_handle(args.target_directory_handle)?;
 
     let volume = config.get_volumes().get_volume_by_number(nw_path.get_volume_index().into())?;
@@ -596,7 +621,10 @@ pub fn process_request_22_2_scan_directory_information<'a>(conn: &mut connection
 
         if !entry.matches(&filename.data()) { continue; }
 
-        // XXX verify match, etc.
+        let trustee_path = construct_trustee_path(nw_path.get_volume_path(), &entry);
+        let rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), nw_path.get_volume_index().into(), &trustee_path);
+        if rights == 0 { continue; }
+
         let p = format!("{}/{}", nw_path.get_local_path(), entry);
         if let Ok(md) = std::fs::metadata(&p) {
             if md.file_type().is_dir() {

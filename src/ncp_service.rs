@@ -224,7 +224,7 @@ impl<'a> NcpService<'a> {
                 ncp::filesystem::process_request_62_file_search_init(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::FileSearchContinue(args) => {
-                ncp::filesystem::process_request_63_file_search_continue(conn, &args, &mut reply)
+                ncp::filesystem::process_request_63_file_search_continue(conn, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::GetBigPacketNCPMaxPacketSize(args) => {
                 ncp::connection::process_request_97_get_big_packet_ncp_max_packet_size(conn, &args, &mut reply)

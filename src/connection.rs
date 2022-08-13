@@ -178,14 +178,16 @@ impl<'a> Connection<'a> {
         Err(NetWareError::BadDirectoryHandle)
     }
 
-    pub fn allocate_search_handle(&mut self, path: &String, contents: Vec<DosFileName>) -> &mut handle::SearchHandle {
+    pub fn allocate_search_handle(&mut self, local_path: &String, volume: u8, volume_path: &String, contents: Vec<DosFileName>) -> &mut handle::SearchHandle {
         let index = self.next_search_handle % self.search_handle.len();
         self.next_search_handle += 1;
 
         let sh = &mut self.search_handle[index];
         *sh = handle::SearchHandle::zero();
         sh.id = self.next_search_handle as u16; // XXX is this safe?
-        sh.path = Some(path.to_string());
+        sh.local_path = Some(local_path.to_string());
+        sh.volume = volume;
+        sh.volume_path = Some(volume_path.to_string());
         sh.entries = Some(contents);
         sh
     }

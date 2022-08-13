@@ -56,12 +56,14 @@ impl<'a> DirectoryHandle<'a> {
 #[derive(Debug)]
 pub struct SearchHandle {
     pub id: u16,
-    pub path: Option<String>,
+    pub local_path: Option<String>,
+    pub volume: u8,
+    pub volume_path: Option<String>,
     pub entries: Option<Vec<DosFileName>>,
 }
 
 impl SearchHandle {
     pub const fn zero() -> Self {
-        Self{ id: 0, path: None, entries: None }
+        Self{ id: 0, local_path: None, volume: 0, volume_path: None, entries: None }
     }
 }
