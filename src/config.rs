@@ -79,13 +79,7 @@ impl Volumes {
 
     pub fn get_volume_by_name(&self, name: &str) -> Result<&Volume, NetWareError> {
         let name = MaxBoundedString::from_str(name);
-        for vol in &self.volumes {
-            if vol.name.equals(name) {
-                return Ok(vol)
-            }
-        }
-
-        Err(NetWareError::NoSuchVolume)
+        self.volumes.iter().find(|v| v.name.equals(name)).ok_or(NetWareError::NoSuchVolume)
     }
 }
 

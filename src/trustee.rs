@@ -144,17 +144,14 @@ impl TrusteeDB {
         // FIXME: the runtime of this function is horrible
         let mut rights: u16 = 0;
         for path in TrusteePathIterator::from(trustee_path) {
-            for id in security_object_ids {
-                if *id == bindery::ID_EMPTY { continue; }
+            for id in security_object_ids.iter().filter(|id| **id != bindery::ID_EMPTY) {
                 if let Some(tp) = self.get_path_trustees(volume_index, &path) {
-                    for trustee in &tp.trustees {
-                        if trustee.object_id == *id {
-                            println!("found rights id {} rights {}", trustee.object_id, trustee.rights);
-                            rights = trustee.rights;
-                            if (rights & RIGHT_SUPERVISOR) != 0 {
-                                info!("short-circuiting path '{}' for object id {} due to supervisor rights", trustee_path, security_object_ids.first().unwrap_or(&0));
-                                return rights;
-                            }
+                    if let Some(trustee) = tp.trustees.iter().find(|tp| tp.object_id == *id) {
+                        println!("found rights id {} rights {}", trustee.object_id, trustee.rights);
+                        rights = trustee.rights;
+                        if (rights & RIGHT_SUPERVISOR) != 0 {
+                            info!("short-circuiting path '{}' for object id {} due to supervisor rights", trustee_path, security_object_ids.first().unwrap_or(&0));
+                            return rights;
                         }
                     }
                 }

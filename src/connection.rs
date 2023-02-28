@@ -85,11 +85,7 @@ impl<'a> Connection<'a> {
     }
 
     pub fn is_supervisor_equivalent(&self) -> bool {
-        return if let Some(_) = self.security_equals_ids.iter().find(|id| **id == bindery::ID_SUPERVISOR) {
-            true
-        } else {
-            false
-        }
+        self.security_equals_ids.iter().find(|id| **id == bindery::ID_SUPERVISOR).is_some()
     }
 
     pub fn has_console_rights(&self) -> bool {
@@ -142,11 +138,13 @@ impl<'a> Connection<'a> {
     }
 
     pub fn alloc_dir_handle(&mut self, config: &'a config::Configuration, typ: handle::DirectoryHandleType, volume_index: usize) -> Result<(u8, &mut handle::DirectoryHandle<'a>), NetWareError> {
-        for (n, dh) in self.dir_handle.iter_mut().enumerate() {
-            // Never allocate the login directory handle
-            if n == (handle::DH_INDEX_LOGIN - 1) as usize { continue; }
-            if !dh.is_available() { continue; }
-
+       if let Some((n, dh)) = self.dir_handle
+            .iter_mut()
+            .enumerate()
+            .find(|(n, dh)|
+                // Never allocate the login directory handle
+                *n != (handle::DH_INDEX_LOGIN - 1) as usize &&
+                dh.is_available()) {
             *dh = handle::DirectoryHandle::zero();
             let volume = config.get_volumes().get_volume_by_number(volume_index)?;
             dh.volume = Some(volume);
@@ -193,18 +191,11 @@ impl<'a> Connection<'a> {
     }
 
     pub fn get_search_handle(&self, id: u16) -> Option<&handle::SearchHandle> {
-        for sh in &self.search_handle {
-            if sh.entries.is_some() && sh.id == id {
-                return Some(sh)
-            }
-        }
-        None
+        self.search_handle.iter().find(|sh| sh.entries.is_some() && sh.id == id)
     }
 
     pub fn allocate_file_handle(&mut self, file: std::fs::File) -> Result<(usize, &mut handle::FileHandle), NetWareError> {
-        for (n, fh) in self.file_handle.iter_mut().enumerate() {
-            if !fh.is_available() { continue; }
-
+        if let Some((n, fh)) = self.file_handle.iter_mut().enumerate().find(|(_, fh)| fh.is_available()) {
             *fh = handle::FileHandle::zero();
             fh.file = Some(file);
             return Ok(((n + 1), fh))
