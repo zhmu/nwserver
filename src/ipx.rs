@@ -114,11 +114,10 @@ pub struct Interface {
 }
 
 pub fn get_network_interfaces() -> Vec<Interface> {
-    let mut result: Vec<Interface> = Vec::new();
-    for i in datalink::interfaces() {
-        result.push(Interface{ name: i.name, descr: i.description });
-    }
-    result
+    datalink::interfaces()
+        .into_iter()
+        .map(|i| Interface{ name: i.name, descr: i.description })
+        .collect()
 }
 
 pub fn create_endpoint(interface: &str) -> Result<(Receiver, Transmitter), std::io::Error> {

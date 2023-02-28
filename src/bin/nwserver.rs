@@ -23,7 +23,7 @@ use std::io::{Error, ErrorKind};
 use nix::unistd::{User, Group};
 
 struct NWServer<'a> {
-    _config: &'a config::Configuration,
+    config: &'a config::Configuration,
     _tx: &'a ipx::Transmitter,
     rip: rip::RipService<'a>,
     sap: sap::SapService<'a>,
@@ -35,10 +35,31 @@ impl<'a> NWServer<'a> {
         let sap = sap::SapService::new(&config, &tx);
         let rip = rip::RipService::new(&config, &tx);
         let ncp = ncp_service::NcpService::new(&config, &tx);
-        NWServer{ _config: &config, _tx: tx, sap, rip, ncp }
+        NWServer{ config: &config, _tx: tx, sap, rip, ncp }
+    }
+
+    fn must_process_packet(&self, ipx: &ipx::IpxPacket) -> bool {
+        let dest_addr = ipx.get_dest();
+
+        // Process anything sent to our server address
+        let server_addr = self.config.get_server_address();
+        if dest_addr.network() == server_addr.network() && dest_addr.host() == server_addr.host() { return true; }
+
+
+        // Process anything send to our MAC address
+        let net_addr = self.config.get_network_address();
+        if dest_addr.host() == net_addr.host() { return true; }
+
+        // Must always process broadcasts
+        dest_addr.host().is_broadcast()
     }
 
     fn process_packet(&mut self, ipx: &ipx::IpxPacket) {
+        if !self.must_process_packet(ipx) {
+            println!("not for me src {:?} {:?}", ipx.get_dest(), self.config.get_server_address());
+            return;
+        }
+
         match ipx.get_dest().socket() {
             consts::IPX_SOCKET_SAP => {
                 if let Err(e) = self.sap.process_packet(&ipx) {
