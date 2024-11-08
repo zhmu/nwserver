@@ -85,7 +85,7 @@ impl<'a> Connection<'a> {
     }
 
     pub fn is_supervisor_equivalent(&self) -> bool {
-        self.security_equals_ids.iter().find(|id| **id == bindery::ID_SUPERVISOR).is_some()
+        self.security_equals_ids.iter().any(|id| *id == bindery::ID_SUPERVISOR)
     }
 
     pub fn has_console_rights(&self) -> bool {
@@ -98,13 +98,13 @@ impl<'a> Connection<'a> {
         self.security_equals_ids = [ bindery::ID_EMPTY; consts::MAX_SECURITY_EQUALS_IDS ];
         self.security_equals_ids[0] = object_id;
 
-        let object = bindery.get_object_by_id(object_id).expect("cannot find object?");
+        let object = bindery.get_mut_object_by_id(object_id).expect("cannot find object?");
         if let Ok(security_equals) = object.get_property_by_name("SECURITY_EQUALS") {
             // XXX This only handles the first property segment
             let mut n = 1;
             if let Some(value) = security_equals.get_segment(0) {
                 for offset in (0..consts::PROPERTY_SEGMENT_LENGTH).step_by(4) {
-                    let buf = &mut value[offset..offset + 4];
+                    let buf = &value[offset..offset + 4];
                     let value_id = BigEndian::read_u32(buf);
                     if value_id != bindery::ID_EMPTY {
                         if n < consts::MAX_SECURITY_EQUALS_IDS {
@@ -204,7 +204,7 @@ impl<'a> Connection<'a> {
     }
 
     pub fn get_mut_file_handle(&mut self, index: usize) -> Result<&mut handle::FileHandle, NetWareError> {
-        return if index >= 1 && index < self.file_handle.len() {
+        if index >= 1 && index < self.file_handle.len() {
             Ok(&mut self.file_handle[index - 1])
         } else {
             Err(NetWareError::InvalidFileHandle)

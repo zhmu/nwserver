@@ -7,7 +7,6 @@
 extern crate nwserver;
 
 use log::*;
-use pretty_env_logger;
 
 use nwserver::ipx;
 use nwserver::rip;
@@ -16,7 +15,6 @@ use nwserver::ncp_service;
 use nwserver::consts;
 use nwserver::config;
 
-use signal_hook;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::{Error, ErrorKind};
@@ -32,10 +30,10 @@ struct NWServer<'a> {
 
 impl<'a> NWServer<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
-        let sap = sap::SapService::new(&config, &tx);
-        let rip = rip::RipService::new(&config, &tx);
-        let ncp = ncp_service::NcpService::new(&config, &tx);
-        NWServer{ config: &config, _tx: tx, sap, rip, ncp }
+        let sap = sap::SapService::new(config, tx);
+        let rip = rip::RipService::new(config, tx);
+        let ncp = ncp_service::NcpService::new(config, tx);
+        NWServer{ config, _tx: tx, sap, rip, ncp }
     }
 
     fn must_process_packet(&self, ipx: &ipx::IpxPacket) -> bool {
@@ -62,17 +60,17 @@ impl<'a> NWServer<'a> {
 
         match ipx.get_dest().socket() {
             consts::IPX_SOCKET_SAP => {
-                if let Err(e) = self.sap.process_packet(&ipx) {
+                if let Err(e) = self.sap.process_packet(ipx) {
                     error!("unable to parse sap packet {:?}", e);
                 }
             },
             consts::IPX_SOCKET_RIP => {
-                if let Err(e) = self.rip.process_packet(&ipx) {
+                if let Err(e) = self.rip.process_packet(ipx) {
                     error!("unable to parse rip packet {:?}", e);
                 }
             },
             consts::IPX_SOCKET_NCP => {
-                if let Err(e) = self.ncp.process_packet(&ipx) {
+                if let Err(e) = self.ncp.process_packet(ipx) {
                     error!("unable to parse ncp packet {:?}", e);
                 }
             },
@@ -83,7 +81,7 @@ impl<'a> NWServer<'a> {
 
 fn change_credentials(unix: &config::TomlUnix) -> Result<(), std::io::Error> {
     if let Some(groupname) = &unix.group {
-        let group = Group::from_name(&groupname)?;
+        let group = Group::from_name(groupname)?;
         if let Some(group) = group {
             let gid = group.gid;
             nix::unistd::setresgid(gid, gid, gid).map_err(|e| Error::new(ErrorKind::Other, format!("cannot change gid: {}", e)))?;
@@ -93,7 +91,7 @@ fn change_credentials(unix: &config::TomlUnix) -> Result<(), std::io::Error> {
     }
 
     if let Some(username) = &unix.user {
-        let user = User::from_name(&username)?;
+        let user = User::from_name(username)?;
         if let Some(user) = user {
             let uid = user.uid;
             nix::unistd::setresuid(uid, uid, uid).map_err(|e| Error::new(ErrorKind::Other, format!("cannot change uid: {}", e)))?;

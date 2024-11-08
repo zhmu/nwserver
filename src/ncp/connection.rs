@@ -83,15 +83,15 @@ pub fn process_request_23_23_get_login_key(conn: &mut connection::Connection, _a
     Ok(())
 }
 
-pub fn process_request_23_24_keyed_object_login<'a>(conn: &mut connection::Connection, config: &'a config::Configuration, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
+pub fn process_request_23_24_keyed_object_login(conn: &mut connection::Connection, config: &config::Configuration, bindery: &mut bindery::Bindery, args: &parser::KeyedObjectLogin, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
     // TODO: This error isn't the correct one
     if !config.is_login_allowed() { return Err(NetWareError::ServerLoginLocked); }
 
     if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
     let login_key = conn.login_key.as_ref().unwrap();
 
-    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let property = object.get_property_by_name("PASSWORD")?;
+    let object = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
+    let property = object.get_mut_property_by_name("PASSWORD")?;
 
     let segment = property.get_segment(0).unwrap();
     let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());

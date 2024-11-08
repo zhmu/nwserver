@@ -511,7 +511,7 @@ impl Request {
     }
 
     pub fn from_2222<T: Read + ReadBytesExt>(header: &NcpHeader, rdr: &mut T) -> Result<Self, NetWareError> {
-        return match header.function_code {
+        match header.function_code {
             18 => { Ok(Request::GetVolumeInfoWithNumber(GetVolumeInfoWithNumber::from(rdr)?)) },
             20 => { Ok(Request::GetFileServerDateAndTime(GetFileServerDateAndTime::from(rdr)?)) },
             22 => { Request::from_2222_22(rdr) },
@@ -546,7 +546,7 @@ impl Request {
             return Err(NetWareError::RequestLengthMismatch);
         }
 */
-        return match sub_func {
+        match sub_func {
             0 => { Ok(Request::SetDirectoryHandle(SetDirectoryHandle::from(rdr)?)) },
             1 => { Ok(Request::GetDirectoryPath(GetDirectoryPath::from(rdr)?)) },
             2 => { Ok(Request::ScanDirectoryInformation(ScanDirectoryInformation::from(rdr)?)) },
@@ -577,7 +577,7 @@ impl Request {
             return Err(NetWareError::RequestLengthMismatch);
         }
 */
-        return match sub_func {
+        match sub_func {
             17 => { Ok(Request::GetFileServerInfo(GetFileServerInfo::from(rdr)?)) },
             23 => { Ok(Request::GetLoginKey(GetLoginKey::from(rdr)?)) },
             24 => { Ok(Request::KeyedObjectLogin(KeyedObjectLogin::from(rdr)?)) },

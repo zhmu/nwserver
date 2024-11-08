@@ -78,7 +78,7 @@ impl DataStreamer for NcpReplyPacket {
     }
 
     fn add_u8(&mut self, value: u8) {
-        assert!(self.payload_length + 1 <= NCP_REPLY_MAX_LENGTH);
+        assert!(self.payload_length < NCP_REPLY_MAX_LENGTH);
         self.payload[self.payload_length] = value;
         self.payload_length += 1;
     }
@@ -105,11 +105,11 @@ impl DataStreamer for NcpReplyPacket {
 impl<'a> NcpService<'a> {
     pub fn new(config: &'a config::Configuration, tx: &'a ipx::Transmitter) -> Self {
         let clients = clients::Clients::new();
-        let mut bindery = bindery::Bindery::new(&config);
+        let mut bindery = bindery::Bindery::new(config);
         let mut initialise_bindery = false;
         if let Some(path) = config.get_bindery_file() {
-            if let Err(_) = bindery.load(path) {
-                error!("unable to load bindery from {}", path);
+            if let Err(e) = bindery.load(path) {
+                error!("unable to load bindery from {}: {:?}", path, e);
                 initialise_bindery = true;
             }
         } else {
@@ -150,10 +150,9 @@ impl<'a> NcpService<'a> {
     }
 
     fn send_reply(&self, dest: &IpxAddr, data: &[u8]) {
-        let server_addr = self.config.get_server_address();
-        let mut src = server_addr.clone();
+        let mut src = self.config.get_server_address();
         src.set_socket(consts::IPX_SOCKET_NCP);
-        self.tx.send(&src, dest, &data)
+        self.tx.send(&src, dest, data)
     }
 
     pub fn process_packet(&mut self, packet: &ipx::IpxPacket) -> Result<(), NetWareError> {
@@ -192,7 +191,7 @@ impl<'a> NcpService<'a> {
         }
 
         // All other requests need us to have a connection
-        let result = self.clients.get_mut_connection(&header, dest);
+        let result = self.clients.get_mut_connection(header, dest);
         if let Err(e) = result {
             self.send(dest, Err(e), &mut reply);
             return;
@@ -245,16 +244,16 @@ impl<'a> NcpService<'a> {
                 ncp::filesystem::process_request_22_20_deallocate_dir_handle(conn, &args, &mut reply)
             },
             ncp::parser::Request::AllocateTemporaryDirectoryHandle(args) => {
-                ncp::filesystem::process_request_22_19_allocate_temp_dir_handle(conn, &self.config, &self.trustee_db, &args, &mut reply)
+                ncp::filesystem::process_request_22_19_allocate_temp_dir_handle(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::AllocatePermanentDirectoryHandle(args) => {
-                ncp::filesystem::process_request_22_18_allocate_perm_dir_handle(conn, &self.config, &self.trustee_db, &args, &mut reply)
+                ncp::filesystem::process_request_22_18_allocate_perm_dir_handle(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::GetDirectoryPath(args) => {
                 ncp::filesystem::process_request_22_1_get_directory_path(conn, &args, &mut reply)
             },
             ncp::parser::Request::OpenFile(args) => {
-                ncp::filesystem::process_request_76_open_file(conn, &self.config, &self.trustee_db, &args, &mut reply)
+                ncp::filesystem::process_request_76_open_file(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::ReadFromFile(args) => {
                 ncp::filesystem::process_request_72_read_from_file(conn, &args, &mut reply)
@@ -263,7 +262,7 @@ impl<'a> NcpService<'a> {
                 ncp::filesystem::process_request_66_close_file(conn, &args, &mut reply)
             },
             ncp::parser::Request::SearchForFile(args) => {
-                ncp::filesystem::process_request_64_search_for_file(conn, &self.config, &self.trustee_db, &args, &mut reply)
+                ncp::filesystem::process_request_64_search_for_file(conn, self.config, &self.trustee_db, &args, &mut reply)
             },
             ncp::parser::Request::LockPhysicalRecordOld(args) => {
                 ncp::sync::process_request_26_lock_physical_record_old(conn, &args, &mut reply)
@@ -296,7 +295,7 @@ impl<'a> NcpService<'a> {
                 ncp::connection::process_request_23_23_get_login_key(conn, &args, &mut reply)
             },
             ncp::parser::Request::KeyedObjectLogin(args) => {
-                ncp::connection::process_request_23_24_keyed_object_login(conn, &self.config, &mut self.bindery, &args, &mut reply)
+                ncp::connection::process_request_23_24_keyed_object_login(conn, self.config, &mut self.bindery, &args, &mut reply)
             },
             ncp::parser::Request::GetBinderyObjectID(args) => {
                 ncp::bindery::process_request_23_53_get_bindery_object_id(conn, &mut self.bindery, &args, &mut reply)

@@ -17,10 +17,10 @@ fn combine_paths(dir1: &str, dir2: &str) -> String {
         let d = d.trim_start_matches(|c: char| { c == '\\' } );
 
         if d.is_empty() { continue; }
-        if !result.is_empty() { result.push_str("/"); }
+        if !result.is_empty() { result.push('/'); }
         result.push_str(d);
     }
-    result.replace("\\", "/")
+    result.replace('\\', "/")
 }
 
 pub struct Path {
@@ -59,7 +59,7 @@ impl Path {
         let mut rights = trustee_db.determine_rights(conn.get_security_equivalent_ids(), volume.number.into(), &volume_path);
         if !volume.writeable {
             // Revoke rights if non-writable volume
-            rights = rights & !(trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY);
+            rights &= !(trustee::RIGHT_WRITE | trustee::RIGHT_CREATE | trustee::RIGHT_ERASE | trustee::RIGHT_MODIFY);
         }
 
         Ok(Self{ volume: volume.number, volume_path, local_path, rights })

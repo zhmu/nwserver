@@ -24,9 +24,9 @@ pub fn process_request_23_61_read_property_value(_conn: &mut connection::Connect
     if args.segment_number == 0 { return Err(NetWareError::NoSuchProperty); }
 
     let segment_number = (args.segment_number - 1) as usize;
-    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let object = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
     let prop = object.get_property_by_name(args.property_name.as_str())?;
-    return if segment_number < prop.values.len() {
+    if segment_number < prop.values.len() {
         reply.add_data(&prop.values[segment_number]);
         reply.add_u8(if segment_number == prop.values.len() - 1 { 0 } else { 0xff });
         reply.add_u8(prop.flag);
@@ -85,7 +85,7 @@ pub fn process_request_23_74_keyed_verify_password(conn: &mut connection::Connec
     if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
     let login_key = conn.login_key.as_ref().unwrap();
 
-    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let object = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
     let property = object.get_property_by_name("PASSWORD")?;
     let segment = property.get_segment(0).unwrap();
     let crypted_password = crypto::encrypt(login_key.data(), segment[0..16].try_into().unwrap());
@@ -97,7 +97,7 @@ pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connec
     if conn.login_key.is_none() { return Err(NetWareError::NoKeyAvailable); }
     let login_key = conn.login_key.as_ref().unwrap();
 
-    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let object = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
     if object.contains_property("PASSWORD") {
         let property = object.get_property_by_name("PASSWORD")?;
         let segment = property.get_segment(0).unwrap();
@@ -106,16 +106,18 @@ pub fn process_request_23_75_keyed_change_password(conn: &mut connection::Connec
     } else {
         object.create_property("PASSWORD", bindery::FLAG_STATIC, 0x44)?;
     }
-    let property = object.get_property_by_name("PASSWORD")?;
+    let property = object.get_mut_property_by_name("PASSWORD")?;
     let segment = property.get_segment(0).unwrap();
     if args.new_password.len() < 16 { return Err(NetWareError::InvalidPassword) }
 
     let new_password = args.new_password.data();
-    let a = crypto::decrypt(segment[0..8].try_into().unwrap(), new_password[0..8].try_into().unwrap());
-    let b = crypto::decrypt(segment[8..16].try_into().unwrap(), new_password[8..16].try_into().unwrap());
 
-    property.set_data(0, &a);
-    property.set_data(8, &b);
+    let mut data = [ 0u8; 16 ];
+    for start in [ 0, 8 ] {
+        let end = start + 8;
+        data[start..end].copy_from_slice(&crypto::decrypt(segment[start..end].try_into().unwrap(), new_password[start..end].try_into().unwrap()));
+    }
+    property.set_data(&data);
     Ok(())
 }
 
@@ -123,19 +125,19 @@ pub fn process_request_23_66_delete_object_from_set(_conn: &mut connection::Conn
     let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
     let member_id = member.id;
 
-    let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let members = group.get_property_by_name(args.property_name.as_str())?;
+    let group = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
+    let members = group.get_mut_property_by_name(args.property_name.as_str())?;
 
     members.remove_member_from_set(member_id)?;
     Ok(())
 }
 
 pub fn process_request_23_67_is_object_in_set(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::IsObjectInSet, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
+    let member = bindery.get_mut_object_by_name(args.member_name, args.member_type)?;
     let member_id = member.id;
 
-    let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let members = group.get_property_by_name(args.property_name.as_str())?;
+    let group = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
+    let members = group.get_mut_property_by_name(args.property_name.as_str())?;
 
     members.is_member_of_set(member_id)
 }
@@ -146,7 +148,7 @@ pub fn process_request_23_72_get_bindery_object_access_level(conn: &mut connecti
     let access_level;
     if conn.is_supervisor_equivalent() {
         access_level = 0x33;
-    } else if let Some(_) = conn.get_security_equivalent_ids().iter().find(|i| **i == object.id) {
+    } else if conn.get_security_equivalent_ids().iter().any(|i| *i == object.id) {
         access_level = 0x22;
     } else {
         access_level = 0x11;
@@ -159,17 +161,17 @@ pub fn process_request_23_65_add_bindery_object_to_set(_conn: &mut connection::C
     let member = bindery.get_object_by_name(args.member_name, args.member_type)?;
     let member_id = member.id;
 
-    let group = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let members = group.get_property_by_name(args.property_name.as_str())?;
+    let group = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
+    let members = group.get_mut_property_by_name(args.property_name.as_str())?;
 
     members.add_member_to_set(member_id)?;
     Ok(())
 }
 
 pub fn process_request_23_57_create_property(_conn: &mut connection::Connection, bindery: &mut bindery::Bindery, args: &parser::CreateProperty, _reply: &mut NcpReplyPacket) -> Result<(), NetWareError> {
-    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
+    let object = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
 
-    if let Ok(_) = object.get_property_by_name(args.property_name.as_str()) {
+    if object.get_property_by_name(args.property_name.as_str()).is_ok() {
         return Err(NetWareError::PropertyExists);
     }
 
@@ -184,8 +186,8 @@ pub fn process_request_23_62_write_property_value(_conn: &mut connection::Connec
     if args.more_flag != 0 { return Err(NetWareError::UnsupportedRequest); } // TODO
 
     let segment_number = (args.segment_number - 1) as usize;
-    let object = bindery.get_object_by_name(args.object_name, args.object_type)?;
-    let prop = object.get_property_by_name(args.property_name.as_str())?;
+    let object = bindery.get_mut_object_by_name(args.object_name, args.object_type)?;
+    let prop = object.get_mut_property_by_name(args.property_name.as_str())?;
     // TODO check security
     return if segment_number < prop.values.len() {
         prop.values[segment_number].copy_from_slice(args.property_value.data());
@@ -224,7 +226,7 @@ pub fn process_request_23_71_scan_bindery_object_trustee_path<'a>(_conn: &mut co
     if let Some((trustee_path, trustee)) = trustee_db.get_indexed_trustee_by_object_id(args.object_id, volume.number as usize, sequence) {
         object_id = trustee.object_id;
         access_mask = trustee.rights & 0xff;
-        path = MaxBoundedString::from_str(&format!("{}:{}", volume.name, trustee_path).to_string());
+        path = MaxBoundedString::from_str(&format!("{}:{}", volume.name, trustee_path));
     } else {
         object_id = bindery::ID_EMPTY;
         access_mask = 0;

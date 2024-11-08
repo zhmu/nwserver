@@ -98,9 +98,8 @@ impl Transmitter {
 
         match self.tx.borrow_mut().send_to(&buffer, None) {
             Some(v) => {
-                match v {
-                    Err(e) => { error!("unable to send IPX packet: {}", e) },
-                    Ok(_) => { },
+                if let Err(e) = v {
+                    error!("unable to send IPX packet: {}", e);
                 }
             },
             None => { error!("unable to send IPX packet") },
@@ -125,7 +124,7 @@ pub fn create_endpoint(interface: &str) -> Result<(Receiver, Transmitter), std::
     // match a description. We attempt both here.
     let interface_name_match = |iface: &NetworkInterface| iface.name == interface || iface.description == interface;
 
-    let net_interface = datalink::interfaces().into_iter().filter(interface_name_match).next();
+    let net_interface = datalink::interfaces().into_iter().find(interface_name_match);
     if net_interface.is_none() {
         let err_string = format!("network interface '{}' not found", interface);
         return Err(std::io::Error::new(std::io::ErrorKind::Other, err_string));

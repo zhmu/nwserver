@@ -35,7 +35,7 @@ pub struct SapEntry {
 fn parse_sap_record<T: Read + ReadBytesExt>(rdr: &mut T) -> Option<SapEntry> {
     let service_type = rdr.read_u16::<BigEndian>().ok()?;
     let mut server_name = [ 0u8; consts::SERVER_NAME_LENGTH ];
-    rdr.read(&mut server_name).ok()?;
+    rdr.read_exact(&mut server_name).ok()?;
     let address = IpxAddr::from(rdr)?;
     let hops = rdr.read_u16::<BigEndian>().ok()?;
     Some(SapEntry { _service_type: service_type, _server_name: server_name, _address: address, _hops: hops })
@@ -61,25 +61,24 @@ impl<'a> SapService<'a> {
         BigEndian::write_u16(&mut buffer[62..], hops);
     }
 
-    fn send_packet(&self, dest: &IpxAddr, op: u16) {
+    fn send_packet(&self, mut dst: IpxAddr, op: u16) {
         let mut buffer = [ 0u8; 66 ];
         BigEndian::write_u16(&mut buffer[0..], op);
         self.build_sap_response(&mut buffer[2..]);
 
         // Always use the network address to send SAP packets from
-        let mut src = self.config.get_network_address().clone();
+        let mut src = self.config.get_network_address();
         src.set_socket(consts::IPX_SOCKET_SAP);
-        let mut dst = dest.clone();
         dst.set_network(src.network());
         self.tx.send(&src, &dst, &buffer);
     }
 
     pub fn advertise(&self) {
         // Send SAP broadcasts to the network address
-        let mut dst = self.config.get_network_address().clone();
+        let mut dst = self.config.get_network_address();
         dst.set_host(&MacAddr::broadcast());
         dst.set_socket(consts::IPX_SOCKET_SAP);
-        self.send_packet(&dst, SAP_OP_GSP);
+        self.send_packet(dst, SAP_OP_GSP);
     }
 
     pub fn process_packet(&mut self, packet: &ipx::IpxPacket) -> Result<(), std::io::Error> {
@@ -101,7 +100,7 @@ impl<'a> SapService<'a> {
             },
             SAP_OP_NSR => {
                 info!("SAP_OP_NSR");
-                self.send_packet(&packet.get_source(), SAP_OP_NSP);
+                self.send_packet(packet.get_source(), SAP_OP_NSP);
             },
             _ => {
                 warn!("Ignoring unrecognized SAP operation {:x}", operation);

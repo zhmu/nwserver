@@ -58,6 +58,7 @@ pub struct TrusteePath {
 
 type Trustees = Vec<TrusteePath>;
 
+#[derive(Default)]
 pub struct TrusteeDB {
     pub entries: Vec<Trustees>,
 }
@@ -82,7 +83,7 @@ impl<'a> Iterator for TrusteePathIterator<'a> {
 
         if self.pos >= self.path.len() { return None; }
         let slice_end;
-        if let Some(n) = self.path[self.pos..].find("/").map(|i| i + self.pos) {
+        if let Some(n) = self.path[self.pos..].find('/').map(|i| i + self.pos) {
             self.pos = n + 1;
             slice_end = n;
         } else {
@@ -99,9 +100,10 @@ impl<'a> TrusteePathIterator<'a> {
     }
 }
 
+
 impl TrusteeDB {
     pub fn new() -> Self {
-        Self{ entries: Vec::new() }
+        Self::default()
     }
 
     pub fn add_trustee_for_path(&mut self, volume_index: usize, path: &str, trustee: Trustee) {
@@ -137,7 +139,7 @@ impl TrusteeDB {
 
     pub fn get_path_trustees(&self, volume_index: usize, path: &str) -> Option<&TrusteePath> {
         let volume_entries = self.entries.get(volume_index)?;
-        volume_entries.iter().filter(|i| i.path == path).next()
+        volume_entries.iter().find(|i| i.path == path)
     }
 
     pub fn determine_rights(&self, security_object_ids: &[ bindery::ObjectID ], volume_index: usize, trustee_path: &str) -> u16 {
@@ -145,7 +147,7 @@ impl TrusteeDB {
         let mut rights: u16 = 0;
         for path in TrusteePathIterator::from(trustee_path) {
             for id in security_object_ids.iter().filter(|id| **id != bindery::ID_EMPTY) {
-                if let Some(tp) = self.get_path_trustees(volume_index, &path) {
+                if let Some(tp) = self.get_path_trustees(volume_index, path) {
                     if let Some(trustee) = tp.trustees.iter().find(|tp| tp.object_id == *id) {
                         println!("found rights id {} rights {}", trustee.object_id, trustee.rights);
                         rights = trustee.rights;
@@ -193,7 +195,7 @@ impl TrusteeDB {
                     let object_name = &object_name.to_string().to_uppercase();
                     let rights = parse_rights_from_str(object_rights).expect("cannot parse rights");
 
-                    let object_id = util::str_to_object_id(bindery, object_name).ok_or(TrusteeError::ObjectNotFound(object_name.to_string()))?;
+                    let object_id = util::str_to_object_id(bindery, object_name).ok_or_else(|| TrusteeError::ObjectNotFound(object_name.to_string()))?;
                     self.add_trustee_for_path(volume.number.into(), &path_name, Trustee{ object_id, rights });
                 }
             }
@@ -216,12 +218,11 @@ impl TrusteeDB {
                     let rights = convert_rights_to_str(trustee.rights);
                     toml_obj_rights.insert(object_name, rights);
                 }
-                let toml_path;
-                if trustee_path.path.is_empty() {
-                    toml_path = "/".to_string();
+                let toml_path = if trustee_path.path.is_empty() {
+                    "/".to_string()
                 } else {
-                    toml_path = trustee_path.path.clone();
-                }
+                    trustee_path.path.clone()
+                };
                 toml_object.insert(toml_path, toml_obj_rights);
             }
             toml_trustees.trustees.insert(volume_name.to_string(), toml_object);

@@ -60,17 +60,14 @@ impl IpxAddr {
     pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Option<Self> {
         let net = rdr.read_u32::<BigEndian>().ok()?;
         let mut mac = [ 0u8; 6 ];
-        rdr.read(&mut mac).ok()?;
+        rdr.read_exact(&mut mac).ok()?;
         let socket = rdr.read_u16::<BigEndian>().ok()?;
         Some(Self(net, MacAddr::from(mac), socket))
     }
 
     pub fn to(&self, buffer: &mut [u8]) {
         BigEndian::write_u32(&mut buffer[0..], self.network());
-        let mac = self.host().octets();
-        for n in 0..6 {
-            buffer[4 + n] = mac[n];
-        }
+        buffer[4..10].copy_from_slice(&self.host().octets());
         BigEndian::write_u16(&mut buffer[10..], self.socket());
     }
 }
@@ -157,7 +154,7 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
         let length: usize = rdr.read_u8()?.into();
         if length >= MAX_SIZE { return Err(NetWareError::StringTooLong) }
         let mut data = [ 0u8; MAX_SIZE ];
-        rdr.read(&mut data[0..length])?;
+        let length = rdr.read(&mut data[0..length])?;
         Ok(Self{ data, length })
     }
 
@@ -190,19 +187,19 @@ impl<const MAX_SIZE: usize> BoundedString<MAX_SIZE> {
     }
 
     pub fn equals<const OTHER_SIZE: usize>(&self, other: BoundedString<OTHER_SIZE>) -> bool {
-        return if self.length == other.length {
+        if self.length == other.length {
             self.data[0..self.length] == other.data[0..self.length]
         } else {
             false
         }
     }
 }
-
+    
 impl<const MAX_SIZE: usize> fmt::Display for BoundedString<MAX_SIZE> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let data = &self.data[0..self.length];
         let s = std::str::from_utf8(data);
-        return if let Ok(s) = s {
+        if let Ok(s) = s {
             fmt.write_str(s)
         } else {
             write!(fmt, "{:?}", data)
@@ -215,12 +212,10 @@ pub type MaxBoundedString = BoundedString<256>;
 // https://en.wikipedia.org/wiki/8.3_filename
 fn is_valid_dos_char(ch: u8) -> bool {
     let ch = ch as char;
-    match ch {
-        'A'..='Z' => { true },
-        '0'..='9' => { true },
-        '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~' => { true },
-        _ => { false }
-    }
+    matches!(ch,
+        'A'..='Z' |
+        '0'..='9' |
+        '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '-' | '@' | '^' | '_' | '`' | '{' | '}' | '~')
 }
 
 #[derive(Copy,Clone)]
@@ -241,7 +236,7 @@ impl DosFileName {
         let mut got_dot = false;
         let mut chars_left: i32 = 8;
         for ch in f.bytes() {
-            if ch == '.' as u8 {
+            if ch == b'.' {
                 // Dot is special, we accept only one
                 if got_dot { return None; }
                 got_dot = true;
@@ -267,7 +262,7 @@ impl DosFileName {
         }
 
         // If we end on a dot, get rid of it
-        if n > 0 && data[n - 1] == '.' as u8 {
+        if n > 0 && data[n - 1] == b'.' {
             data[n - 1] = 0;
         }
         Some(Self{ data })
@@ -286,27 +281,26 @@ impl DosFileName {
             match ch {
                 0xbf | 0x3f => {
                     // single char wildcard
-                    if self.data[m] == 0 || self.data[m] == '.' as u8 {
+                    if self.data[m] == 0 || self.data[m] == b'.' {
                         return false
                     }
                     m += 1;
                 },
                 0xaa | 0x2a => {
                     // asterisk
-                    let stop_at;
-                    if n + 1 < pattern.len() {
-                        stop_at = pattern[n + 1];
+                    let stop_at = if n + 1 < pattern.len() {
+                        pattern[n + 1]
                     } else {
-                        stop_at = 0;
-                    }
-                    while m < self.data.len() && self.data[m] != 0 && self.data[m] != '.' as u8 {
+                        0
+                    };
+                    while m < self.data.len() && self.data[m] != 0 && self.data[m] != b'.' {
                         if stop_at != 0 && self.data[m] == stop_at { break; }
                         m += 1;
                     }
                 },
                 0xae | 0x2e => {
                     // dot
-                    if self.data[m] != '.' as u8 {
+                    if self.data[m] != b'.' {
                         if self.data[m] == 0 {
                             // We have matched the part before the dot, but
                             // there is no extension. FOO.?? and FOO.* are
@@ -417,8 +411,8 @@ impl LoginKey {
         let mut values = [ 0u8; 8 ];
 
         let mut rng = rand::thread_rng();
-        for n in 0..8 {
-            values[n] = rng.gen::<u8>();
+        for n in &mut values {
+            *n = rng.gen::<u8>();
         }
         Self(values)
     }
@@ -512,7 +506,7 @@ impl MaxBoundedBuffer {
     pub fn from<T: Read + ReadBytesExt>(rdr: &mut T) -> Result<Self, NetWareError> {
         let mut buf = Self::empty();
         buf.length = rdr.read_u16::<BigEndian>()?.into();
-        rdr.read(&mut buf.data[0..buf.length])?;
+        rdr.read_exact(&mut buf.data[0..buf.length])?;
         Ok(buf)
     }
 

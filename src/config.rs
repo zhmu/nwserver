@@ -56,7 +56,7 @@ impl Volumes {
     fn new(config: &TomlConfig) -> Result<Self, ConfigError> {
         let mut volumes: Vec<Volume> = Vec::new();
         for (name, value) in &config.volumes {
-            let name = verify_and_convert_string(&name)?;
+            let name = verify_and_convert_string(name)?;
             let number = volumes.len() as u8;
             volumes.push(Volume{ number, name, path: value.path.to_string(), writeable: value.writeable })
         }
@@ -70,7 +70,7 @@ impl Volumes {
     }
 
     pub fn get_volume_by_number(&self, number: usize) -> Result<&Volume, NetWareError> {
-        return if number < self.volumes.len() {
+        if number < self.volumes.len() {
             Ok(&self.volumes[number])
         } else {
             Err(NetWareError::NoSuchVolume)
@@ -161,7 +161,7 @@ fn verify_and_convert_string<const MAX_LENGTH: usize>(input: &str) -> Result<Bou
     Ok(BoundedString::from_str(input_uc.as_str()))
 }
 
-fn parse_visitor_root(volumes: &Volumes, path: &String) -> Result<(u8, String), NetWareError> {
+fn parse_visitor_root(volumes: &Volumes, path: &str) -> Result<(u8, String), NetWareError> {
     let colon = path.find(':');
     if colon.is_none() { return Err(NetWareError::NoSuchVolume); }
     let colon = colon.unwrap();
@@ -174,7 +174,7 @@ fn parse_visitor_root(volumes: &Volumes, path: &String) -> Result<(u8, String), 
 
 impl Configuration {
     pub fn new(content: &str) -> Result<Self, ConfigError> {
-        let toml: TomlConfig = toml::from_str(&content)?;
+        let toml: TomlConfig = toml::from_str(content)?;
 
         let server_address = IpxAddr::new(toml.network.internal_ipx_network, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0);
         let network_address = IpxAddr::new(toml.network.ipx_network, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0);

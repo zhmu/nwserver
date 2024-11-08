@@ -59,7 +59,7 @@ fn shuffle1(temp: &[u8; 32]) -> [ u8; 16 ] {
 
     let mut b4: u8 = 0;
     for _ in 0..2 {
-        for s in 0..32 as usize {
+        for s in 0..32_usize {
             let index = (s + b4 as usize) & 31;
             let b3 = shuffeled_temp[s].wrapping_add(b4) ^ shuffeled_temp[index].wrapping_sub(SHUFFLE_KEYS[s]);
             b4 = b4.wrapping_add(b3);
@@ -215,7 +215,7 @@ pub fn decrypt(oldpwd: [u8; 8], newpwd: [u8; 8]) -> [ u8; 8 ] {
 pub fn encrypt_bindery_password(object_id: u32, password: &str) -> [u8; 16] {
     let password_bytes = password.as_bytes();
     let mut buffer = [ 0u8; 16 ];
-    buffer[0..password_bytes.len()].copy_from_slice(&password_bytes);
+    buffer[0..password_bytes.len()].copy_from_slice(password_bytes);
 
     let mut uid = [ 0u8; 4 ];
     BigEndian::write_u32(&mut uid, object_id);

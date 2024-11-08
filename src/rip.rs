@@ -54,16 +54,15 @@ impl<'a> RipService<'a> {
         BigEndian::write_u16(&mut buffer[8..10], ticks);
     }
 
-    fn send_response(&self, dest_ipx_network: u32, dst: &IpxAddr) {
+    fn send_response(&self, dest_ipx_network: u32, mut dst: IpxAddr) {
         let mut buffer = [ 0u8; 10 ];
         self.build_rip_response(dest_ipx_network, &mut buffer[0..]);
 
         let server_addr = self.config.get_server_address();
-        let mut src = server_addr.clone();
+        let mut src = server_addr;
         src.set_socket(consts::IPX_SOCKET_RIP);
         // Always fill out the network address so clients known which IPX
         // network they are on
-        let mut dst = dst.clone();
         dst.set_network(self.config.get_network_address().network());
         self.tx.send(&src, &dst, &buffer);
     }
@@ -82,7 +81,7 @@ impl<'a> RipService<'a> {
 
                     let server_ipx_network = self.config.get_server_address().network();
                     if rip.dest == server_ipx_network {
-                        self.send_response(server_ipx_network, &packet.get_source());
+                        self.send_response(server_ipx_network, packet.get_source());
                     } else {
                         info!("ignoring RIP request for network {:x} which is not my IPX network", rip.dest);
                     }

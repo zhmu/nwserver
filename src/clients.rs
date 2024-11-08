@@ -15,11 +15,17 @@ pub struct Clients<'a> {
     client: [ Connection<'a>; consts::MAX_CONNECTIONS ],
 }
 
-impl<'a> Clients<'a> {
-    pub fn new() -> Self {
+impl<'a> Default for Clients<'a> {
+    fn default() -> Self {
         const CONN_INIT: Connection = Connection::zero();
         let client = [ CONN_INIT; consts::MAX_CONNECTIONS ];
         Self{ client }
+    }
+}
+
+impl<'a> Clients<'a> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn count_in_use(&self) -> usize {
@@ -38,7 +44,7 @@ impl<'a> Clients<'a> {
 
     pub fn get_mut_connection(&mut self, header: &NcpHeader, dest: &IpxAddr) -> Result<&mut Connection<'a>, NetWareError> {
         let connection_number = header.connection_number as usize;
-        if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
+        if (1..consts::MAX_CONNECTIONS).contains(&connection_number) {
             let index = connection_number - 1;
             let conn = &mut self.client[index];
             if conn.dest == *dest {
@@ -50,7 +56,7 @@ impl<'a> Clients<'a> {
 
     pub fn get_connection_by_number(&mut self, connection_number: u32) -> Result<&mut Connection<'a>, NetWareError> {
         let connection_number = connection_number as usize;
-        if connection_number >= 1 && connection_number < consts::MAX_CONNECTIONS {
+        if (1..consts::MAX_CONNECTIONS).contains(&connection_number) {
             let index = connection_number - 1;
             return Ok(&mut self.client[index]);
         }

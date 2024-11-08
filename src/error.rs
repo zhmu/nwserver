@@ -37,11 +37,12 @@ pub enum NetWareError {
     NoMoreDirectoryEntries,
     NoConsoleRights,
     TrusteeNotFound,
+    MemberExists,
 }
 
 impl NetWareError {
     pub fn to_error_code(&self) -> u8 {
-        return match self {
+        match self {
             NetWareError::NoKeyAvailable => 0x96,
             NetWareError::ConnectionNotLoggedIn => 0x7d,
             NetWareError::OutOfHandles => 0x81,
@@ -57,6 +58,7 @@ impl NetWareError {
             NetWareError::ServerLoginLocked => 0xc5,
             NetWareError::NoConsoleRights => 0xc6,
             NetWareError::InvalidPassword => 0xde,
+            NetWareError::MemberExists => 0xe9,
             NetWareError::NoSuchMember => 0xea,
             NetWareError::NoSuchSet => 0xec,
             NetWareError::PropertyExists => 0xed,
